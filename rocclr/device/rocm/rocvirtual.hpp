@@ -209,7 +209,7 @@ class VirtualGPU : public device::VirtualDevice {
     ~ManagedBuffer();
 
     //! Allocates all necessary resources to manage memory
-    bool Create(amd::Device::MemorySegment mem_segment);
+    bool Create(amd::Device::MemorySegment mem_segment, bool force_host = false);
 
     //! Acquires memory for use on the gpu
     address Acquire(uint32_t size);
@@ -217,11 +217,14 @@ class VirtualGPU : public device::VirtualDevice {
     //! Acquires custom aligned memory for use on the gpu
     address Acquire(uint32_t size, uint32_t alignment);
 
+    uint64_t Rotations() const { return pool_rotations_; }
+
     //! Reset mem pool
     void ResetPool();
 
    private:
     VirtualGPU& gpu_;                        //!< Queue object for ROCm device
+    uint64_t pool_rotations_ = 0;
     address pool_base_ = nullptr;            //!< Memory pool base address
     uint32_t pool_size_;                     //!< Memory pool base size
     uint32_t pool_chunk_end_ = 0;            //!< The end offset of the current chunk
@@ -475,6 +478,7 @@ class VirtualGPU : public device::VirtualDevice {
 
  private:
   //! Dispatches a barrier with blocking HSA signals
+  void dispatchNativeEventWait(hsa_signal_t signal);
   void dispatchBlockingWait();
 
   bool dispatchAqlPacket(hsa_kernel_dispatch_packet_t* packet, uint16_t header, uint16_t rest,
@@ -613,6 +617,10 @@ class VirtualGPU : public device::VirtualDevice {
 
   ManagedBuffer managed_buffer_;          //!< Memory manager for staging copies
   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
+  ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
+  bool native_wait_enabled_ = false;
+  uint64_t native_wait_count_ = 0;
+  uint64_t native_irq_wait_count_ = 0;
 
   static constexpr uint32_t kStagingPoolNumSignals = 4; //!< Hsa Signal count for Staging Buffer
   static constexpr uint32_t kKernArgPoolNumSignals = 16; //!< Hsa Signal count for KernArg Buffer

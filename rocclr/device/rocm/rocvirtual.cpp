@@ -1209,8 +1209,73 @@ bool VirtualGPU::dispatchGenericAqlPacket(AqlPacket* packet, uint16_t header, ui
 }
 
 // ================================================================================================
+// Experimental gfx950 backend. Keep the original AQL dependency packet after
+// this pre-wait: it owns the full-width condition, memory fences and notification.
+// Encoding follows ROCr rocm-7.2.4 AqlQueue::ExecutePM4 and amd_gpu_pm4.h.
+void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
+  if (!native_wait_enabled_ || signal.handle == 0) return;
+  const auto value = Hsa::signal_load_relaxed(signal);
+  if (value != 1 && value != 2) return;
+  volatile hsa_signal_value_t* pointer = nullptr;
+  if (Hsa::signal_value_pointer(signal, &pointer) != HSA_STATUS_SUCCESS) {
+    // ROCr's public writable-pointer API only accepts BusyWaitSignal. Internally,
+    // both DefaultSignal and InterruptSignal use the AMD_SIGNAL_KIND_USER ABI
+    // already included and consumed by CLR for timestamps. Read only: completion
+    // stores and interrupt mailbox notification remain with the original producer.
+    // This experimental path is tied to the matching ROCr 7.2.4 signal ABI.
+    static_assert(offsetof(amd_signal_t, value) == 8, "AMD signal value ABI");
+    const auto* amd_signal = reinterpret_cast<const amd_signal_t*>(signal.handle);
+    if (amd_signal->kind != AMD_SIGNAL_KIND_USER) return;
+    pointer = const_cast<volatile hsa_signal_value_t*>(&amd_signal->value);
+    if (GPU_NATIVE_EVENT_TRACE) ++native_irq_wait_count_;
+  }
+  auto* ib = reinterpret_cast<uint32_t*>(native_wait_buffer_.Acquire(28, 64));
+  const uintptr_t address = reinterpret_cast<uintptr_t>(pointer);
+  const uintptr_t base = reinterpret_cast<uintptr_t>(ib);
+  if ((address & 3) || (base & 3) || (base >> 48)) return;
+  if (GPU_NATIVE_EVENT_TRACE) ++native_wait_count_;
+  ib[0] = 0xc0053c00; // Type 3 WAIT_REG_MEM, seven DWORDs.
+  ib[1] = 3 | (1 << 4); // Equal, memory space; ACE offload disabled.
+  ib[2] = static_cast<uint32_t>(address);
+  ib[3] = static_cast<uint32_t>(address >> 32);
+  ib[4] = 0;
+  ib[5] = 0xffffffff;
+  ib[6] = 4; // Encoded poll interval; not a measured time in microseconds.
+  struct NativePacket {
+    uint16_t header, format;
+    uint32_t jump[4], remain, reserved[8];
+    hsa_signal_t completion_signal;
+  } packet{};
+  static_assert(sizeof(NativePacket) == 64, "Native AQL packet size");
+  static_assert(offsetof(NativePacket, completion_signal) == 56, "Completion ABI");
+  packet.header = kInvalidAql;
+  packet.format = 1;
+  packet.jump[0] = 0xc0023f00; // Type 3 INDIRECT_BUFFER, four DWORDs.
+  packet.jump[1] = static_cast<uint32_t>(base) & 0xfffffffc;
+  packet.jump[2] = static_cast<uint32_t>(base >> 32) & 0xffff;
+  packet.jump[3] = 7 | (1 << 23); // Instruction count and IB_VALID.
+  packet.remain = 0xa;
+  const uint32_t mask = gpu_queue_->size - 1;
+  const uint64_t index = Hsa::queue_add_write_index_screlease(gpu_queue_, 1);
+  while (index - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {}
+  auto* slot = &reinterpret_cast<NativePacket*>(gpu_queue_->base_address)[index & mask];
+  *slot = packet;
+  TrackQueueProgress(packet, index);
+  if (GPU_NATIVE_EVENT_TRACE) {
+    fprintf(stderr, "NATIVE_EVENT_PACKET queue=%llu index=%llu signal=%llu\n",
+            static_cast<unsigned long long>(gpu_queue_->id),
+            static_cast<unsigned long long>(index),
+            static_cast<unsigned long long>(signal.handle));
+  }
+  packet_store_release(reinterpret_cast<uint32_t*>(slot),
+                       HSA_PACKET_TYPE_VENDOR_SPECIFIC << HSA_PACKET_HEADER_TYPE, 1);
+  Hsa::signal_store_screlease(gpu_queue_->doorbell_signal, index);
+  hasPendingDispatch_ = true;
+}
+
 void VirtualGPU::dispatchBlockingWait() {
   auto wait_signals = Barriers().WaitingSignal();
+  for (auto signal : wait_signals) dispatchNativeEventWait(signal);
   // AQL dispatch doesn't support dependent signals and extra barrier packet must be generated
   for (uint32_t i = 0; i < wait_signals.size(); ++i) {
     uint32_t j = i % 5;
@@ -1526,6 +1591,7 @@ void VirtualGPU::dispatchBarrierPacket(uint16_t packetHeader, bool skipSignal,
   if (!skipSignal) {
     // Make sure the wait is issued before queue index reservation
     auto wait_signals = Barriers().WaitingSignal();
+    for (auto signal : wait_signals) dispatchNativeEventWait(signal);
     for (uint32_t i = 0; i < wait_signals.size(); ++i) {
       uint32_t j = i % 5;
       barrier_packet_.dep_signal[j] = wait_signals[i];
@@ -1607,6 +1673,7 @@ void VirtualGPU::dispatchBarrierValuePacket(uint16_t packetHeader, bool resolveD
   assert(resolveDepSignal & (signal.handle != 0) == 0);
   if (resolveDepSignal) {
     auto wait_signals = Barriers().WaitingSignal();
+    for (auto dependency : wait_signals) dispatchNativeEventWait(dependency);
     if (wait_signals.size() > 0) {
       barrier_value_packet_.signal = wait_signals[0];
       barrier_value_packet_.value = kInitSignalValueOne;
@@ -1719,6 +1786,7 @@ VirtualGPU::VirtualGPU(Device& device, bool profiling, bool cooperative,
       barriers_(*this),
       managed_buffer_(*this, kStagingPoolNumSignals * device.settings().stagedXferSize_, kStagingPoolNumSignals),
       managed_kernarg_buffer_(*this, device.settings().kernargPoolSize_, kKernArgPoolNumSignals),
+      native_wait_buffer_(*this, 128 * 1024, 2),
       cuMask_(cuMask),
       priority_(priority),
       copy_command_type_(0),
@@ -1792,6 +1860,12 @@ VirtualGPU::~VirtualGPU() {
     releaseGpuMemoryFence();
   }
 
+  if (GPU_NATIVE_EVENT_TRACE && native_wait_enabled_) {
+    fprintf(stderr, "NATIVE_EVENT_QUEUE index=%u waits=%llu irq=%llu rotations=%llu\n",
+            index_, static_cast<unsigned long long>(native_wait_count_),
+            static_cast<unsigned long long>(native_irq_wait_count_),
+            static_cast<unsigned long long>(native_wait_buffer_.Rotations()));
+  }
   releasePinnedMem();
 
   if (timestamp_ != nullptr) {
@@ -1873,6 +1947,12 @@ bool VirtualGPU::create() {
     LogError("Could not create managed buffer for this queue!");
     return false;
   }
+  const auto& native_isa = dev().isa();
+  if (GPU_NATIVE_EVENT_WAIT && native_isa.versionMajor() == 9 &&
+      native_isa.versionMinor() == 5 && native_isa.versionStepping() == 0) {
+    native_wait_enabled_ = native_wait_buffer_.Create(Device::MemorySegment::kKernArg, true);
+    if (!native_wait_enabled_) LogError("Native event instruction pool unavailable; using AQL waits");
+  }
   // Release HW queue until the first usage
   ReleaseHwQueue();
   return true;
@@ -1891,11 +1971,11 @@ VirtualGPU::ManagedBuffer::~ManagedBuffer() {
 }
 
 // ================================================================================================
-bool VirtualGPU::ManagedBuffer::Create(Device::MemorySegment mem_segment) {
+bool VirtualGPU::ManagedBuffer::Create(Device::MemorySegment mem_segment, bool force_host) {
   pool_chunk_end_ = pool_size_ / num_chunk_signals_;
   active_chunk_ = 0;
   // Allocate memory for managed buffer
-  if (mem_segment == Device::MemorySegment::kKernArg &&
+  if (!force_host && mem_segment == Device::MemorySegment::kKernArg &&
       (gpu_.dev().settings().kernel_arg_impl_ != KernelArgImpl::HostKernelArgs) &&
       gpu_.dev().info().largeBar_) {
     amd::Device::AllocationFlags flags = {};
@@ -1906,6 +1986,10 @@ bool VirtualGPU::ManagedBuffer::Create(Device::MemorySegment mem_segment) {
       // KFD may update CPU page tables on the first CPU access
       *pool_base_ = 0;
     }
+  } else if (force_host) {
+    // Native command instructions are CPU-written and GPU-read. Do not inherit
+    // the kernel-argument allocator's default coarse-grained memory policy.
+    pool_base_ = reinterpret_cast<address>(gpu_.dev().hostExecutableAlloc(pool_size_));
   } else {
     pool_base_ = reinterpret_cast<address>(gpu_.dev().hostAlloc(pool_size_, 0, mem_segment));
   }
@@ -1936,6 +2020,7 @@ address VirtualGPU::ManagedBuffer::Acquire(uint32_t size, uint32_t alignment) {
     pool_cur_offset_ = pool_new_usage;
     return result;
   } else {
+    ++pool_rotations_;
     // Reset the signal for the barrier packet
     Hsa::signal_silent_store_relaxed(pool_signal_[active_chunk_], kInitSignalValueOne);
     ClPrint(amd::LOG_DETAIL_DEBUG, amd::LOG_KERN, "Issue barrier to flush chunk %d",

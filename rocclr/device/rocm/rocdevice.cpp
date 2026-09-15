@@ -2004,6 +2004,23 @@ hsa_amd_memory_pool_t Device::getHostMemoryPool(MemorySegment mem_seg,
 }
 
 // ================================================================================================
+void* Device::hostExecutableAlloc(size_t size) const {
+  void* allocation = nullptr;
+  // Request the measured native-instruction cache policy directly. Keep
+  // fine-grained coherence and executable permission without depending on
+  // application kernarg policy or using the kernarg pool as a cache-policy proxy.
+  const auto pool = getHostMemoryPool(kAtomics);
+  const auto flags = HSA_AMD_MEMORY_POOL_EXECUTABLE_FLAG | HSA_AMD_MEMORY_POOL_UNCACHED_FLAG;
+  if (Hsa::memory_pool_allocate(pool, size, flags, &allocation) != HSA_STATUS_SUCCESS)
+    return nullptr;
+  if (Hsa::agents_allow_access(gpu_agents_.size(), gpu_agents_.data(), nullptr, allocation) !=
+      HSA_STATUS_SUCCESS) {
+    hostFree(allocation, size);
+    return nullptr;
+  }
+  return allocation;
+}
+
 void* Device::hostAlloc(size_t size, size_t alignment, MemorySegment mem_seg,
                         const void* agentInfo) const {
   void* ptr = nullptr;

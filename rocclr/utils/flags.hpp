@@ -147,6 +147,10 @@ release(bool, GPU_ENABLE_COOP_GROUPS, true,                                   \
          "Enables cooperative group launch")                                  \
 release(uint, GPU_MAX_COMMAND_BUFFERS, 8,                                     \
          "The maximum number of command buffers allocated per queue")         \
+release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
+        "Trace native event counts at queue destruction")                     \
+release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
+        "Experimental gfx950 native event pre-wait")                          \
 release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
          "The maximum number of HW queues allocated per device")              \
 release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \
