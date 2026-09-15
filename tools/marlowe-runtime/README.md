@@ -51,3 +51,13 @@ canary, resolve sanitizer shutdown findings, and define ownership of the pinned
 ROCr internal ABI. This fork's release backport is separate from a forward port
 to ROCm/rocm-systems. When AMD ships a supported package, qualify it through the
 same reproducer/workload suite and retire the overlay.
+
+
+`bash build-image.sh BASE_IMAGE@sha256:DIGEST ARCHIVE ARCHIVE_SHA256 OUTPUT_TAG`
+produces a local derived image from an existing release archive. It requires an
+immutable base reference, checks the archive before building, and verifies the
+installed library bytes during the image build without requiring a GPU. The
+Dockerfile uses root and preserves the base entrypoint; set the service user in
+your workload image as appropriate. Publishing is a separate step. The image
+recipe is supplied for integration; OCI image build and canary validation remain
+open until a matching registry base digest and release destination are configured.
