@@ -1,0 +1,53 @@
+# Marlowe HIP runtime overlay
+
+Build and package the gfx950 event-wait backport as a userspace HIP/HSA overlay.
+The package is independent of SGLang and HiSparse and uses unchanged HIP/PyTorch
+APIs. This release candidate is opt-in and is not yet production-qualified.
+
+Use a ROCm7.2.4 Linux build image with matching compiler, COMGR, headers and HSA,
+CMake, Git, Python pip and setuptools. Pin and record the base image digest in
+your build system. The tested development environment is the SGLang ROCm7.2.4
+MI35x image; this overlay is not a complete standalone ROCm distribution.
+
+```
+RUNTIME_WORK_DIR=/build/native-wait bash tools/marlowe-runtime/build.sh
+```
+
+The build script fetches exact CLR and HIP commits from source-lock.json and
+verifies them. It records binary, recipe and tool identity, includes the runtime
+licenses, and produces a relocatable directory plus a tar archive and its digest.
+Optional embedded HIP PCH is disabled, matching the qualified build configuration.
+Runtime-compilation use cases need separate qualification.
+
+Copy the extracted release into `/opt/marlowe/runtime/<release>` in a derived
+image. Preserve symlinks. Do not overwrite system ROCm libraries. The matching
+base image supplies the remaining dependencies. Keep this layer identical in
+control and candidate containers.
+
+```
+GPU_NATIVE_EVENT_WAIT=0 /opt/marlowe/runtime/<release>/run python app.py
+GPU_NATIVE_EVENT_WAIT=1 /opt/marlowe/runtime/<release>/run python app.py
+```
+
+The launcher verifies packaged bytes before exec and selects HIP and HSA together.
+It deliberately preloads by library name with the package directory first in
+LD_LIBRARY_PATH: absolute preload paths allowed a second bundled HIP library to
+load in the tested PyTorch image. Check the actual process with `verify.py` under
+the same launcher; an independent probe is useful but is not a substitute for
+worker-level runtime identity receipts in a distributed service.
+
+The verifier refuses changed library bytes, duplicate HIP/HSA mappings, an
+unexpected HIP version and non-gfx950 devices. The launcher remains usable with
+non-Python HIP programs; PyTorch is needed only for the process verification probe.
+Ordinary stream/graph APIs are unchanged. No per-model event wrappers are needed.
+
+Rollback requires restarting workers with the feature disabled. Full rollback
+selects the previous image, removing the entire overlay. Preserve the stock image
+as a third qualification arm so replacing the bundled runtime is tested separately
+from enabling native waits.
+
+For production, complete model correctness/performance qualification and a bounded
+canary, resolve sanitizer shutdown findings, and define ownership of the pinned
+ROCr internal ABI. This fork's release backport is separate from a forward port
+to ROCm/rocm-systems. When AMD ships a supported package, qualify it through the
+same reproducer/workload suite and retire the overlay.

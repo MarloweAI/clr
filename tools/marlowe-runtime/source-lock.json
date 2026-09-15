@@ -1,0 +1,12 @@
+{
+  "release": "marlowe-hip-7.2.4-native-wait-v7-rc3",
+  "clr_repository": "https://github.com/MarloweAI/clr.git",
+  "clr_commit": "341796212db05fea04db2c142a3e18d4026d510c",
+  "hip_repository": "https://github.com/ROCm/HIP.git",
+  "hip_commit": "bc9af25177f96c0fea93198b89cf4c3cf08f3ea3",
+  "hip_library": "libamdhip64.so.7.2.53211",
+  "hsa_library": "libhsa-runtime64.so.1.18.70204",
+  "architecture": "gfx950",
+  "default_enabled": false,
+  "qualified_for_production": false
+}
