@@ -62,14 +62,14 @@ RC3 comparison includes the impact of replacing the bundled libraries.
 | RC2 disabled → enabled (40712 / 40730) | Off | -7.10% | +8.61% | Both |
 | RC2 disabled → enabled (40778 / 40774) | On | -8.88% | -4.95% | Both |
 | Stock → RC3 enabled (40819 / 40820) | Off | -15.11% | -9.60% | Neither |
-| Stock → RC3 enabled (40827 / 40823) | On | Pending stock arm | Pending stock arm | Pending |
+| Stock → RC3 enabled (40827 / 40823) | On | -7.46% | -1.98% | Neither |
 
 These are one process per arm with repeated waves, not independent job replication
 or a broad no-regression result. Initial RC2 runs have multi-second pauses, including
 pauses in disabled controls. RC3 jobs 40820 and 40823 have no measured token gap
 of 500 ms or more. This does not establish that earlier pauses cannot recur.
 
-Stock 40819 and RC3 40820/40823 each answer three 32K-context retrieval probes
+Stock 40819/40827 and RC3 40820/40823 each answer three 32K-context retrieval probes
 correctly. GLM puts reasoning and the final answer in one content field; the initial
 scorer incorrectly reports zero correct. Independent strict scoring of the exact
 six-digit answer after the explicit reasoning boundary gives 3/3, requiring normal
@@ -97,7 +97,7 @@ Upload ASan processes complete workload checks but fail during shutdown with
 native waits both disabled and enabled. They are not counted as sanitizer passes.
 The investigator continues to reduce and diagnose this failure.
 
-Before promotion, complete the shipping comparison and independent replication,
+Before promotion, complete independent replication,
 explain serving pauses and the sanitizer shutdown failure, validate the derived
 image and rehearse rollback. Run a representative multi-GPU serving soak and an
 opt-in canary with restart, output-health, memory, TTFT and decode-tail checks.
