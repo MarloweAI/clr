@@ -1,8 +1,44 @@
 # Release evidence and promotion status
 
-The current producer targets RC4 after review fixes. RC4 has not yet been built
-or qualified; the measurements below belong to the retained RC3 artifact unless
-explicitly labelled RC2. A new artifact needs its own qualification receipts.
+## Current RC4 candidate
+
+Three Claude Fable review passes identified and checked fixes for instruction-pool
+host stalls, re-entrant barrier construction, missing preload-alias validation and
+unpinned HSA bytes. The source lock now targets
+`85b0432bde51e66f8f79615de1022697ad59c5cf`. Native storage acquisition falls back to
+AQL when a chunk is busy; a local retirement packet preserves the caller's pending
+barrier state. The launcher preserves inherited library search order.
+
+Clean build 41146 produced `marlowe-hip-7.2.4-native-wait-v7-rc4`, archive SHA256
+`728378b9e86f8318260c05ed6caa252633c51363a02143b1efa69c815b197c9d`.
+Qualification 41156 passed 720 Python and 720 C++ measured trials with actual-process
+library receipts, 400 PyTorch event/graph checks and 12 bounded semantic processes.
+PyTorch removes 95.8–96.2% of the added wait latency. The pressure regression submits
+2,300 pending waits in 12.1 ms enabled, with one pool rotation, 252 fallbacks and no
+watchdog release. RC3 needed its two-second watchdog at the 2,049th submission.
+Correct output alone was not counted as passing this progress check.
+
+Files-only checks reject missing, broken, redirected and dereferenced preload
+aliases. Assembly rejects different HSA bytes even with the expected filename and
+requires the orchestrator's pinned build-image identity. This identity is a
+provenance declaration, not an in-container attestation.
+
+A full mapped-library capture after matmul and a one-rank RCCL collective records
+HIP/HSA replacement, base-image DRM selection, and additional COMGR and profiler-
+registration libraries. Common library paths and hashes remain unchanged, including
+the math and collective libraries. Stock-versus-overlay comparisons include these
+transitive dependency changes; they do not isolate native waits.
+
+RC4 full-model enabled/disabled pairs with prefetch off/on are queued (41183/41186).
+They check the successor artifact and disabled rollback state. Earlier model results
+below are RC2/RC3 evidence and do not qualify RC4. Production promotion remains open.
+Use one active serving worker per GPU without unrelated co-located GPU workloads;
+cross-process native-wait scheduling/QoS is outside current qualification.
+
+## Retained RC3 and RC2 evidence
+
+The following measurements belong to RC3 unless explicitly labelled RC2. They are
+retained for provenance and comparison, not silently transferred to RC4.
 
 RC3 removes about 96% of the added wait cost in the original pattern using
 ordinary PyTorch. Model results are promising but do not yet justify production
