@@ -29,9 +29,26 @@ registration libraries. Common library paths and hashes remain unchanged, includ
 the math and collective libraries. Stock-versus-overlay comparisons include these
 transitive dependency changes; they do not isolate native waits.
 
-RC4 full-model enabled/disabled pairs with prefetch off/on are queued (41183/41186).
-They check the successor artifact and disabled rollback state. Earlier model results
-below are RC2/RC3 evidence and do not qualify RC4. Production promotion remains open.
+RC4 prefetch-off pair 41183 completed on the same correctness-only application and
+model protocol described below. Disabled → enabled median time per output token
+changed by -13.99% at concurrency 1 and -6.39% at concurrency 4; the three-wave
+ranges do not overlap. Each arm passes 3/3 long-context answer checks. All six
+processes per arm map exactly the expected RC4 HIP/HSA hashes, with no unavailable
+library hashes. Common library paths retain identical hashes; temporary versus
+cached TileLang JIT libraries differ between fresh server processes. The pair runs
+disabled then enabled in one container, so compilation-cache/order effects and
+independent job replication remain limitations.
+
+The enabled arm contains one 611.8 ms measured token gap, included in these
+results, with no overlapping GC or CPU page-fault delta. Four TP workers show
+107, 317, 276 and 395 ms increases in their maximum per-device KFD eviction
+accounting over a 1.017 s sampling bracket. Do not sum per-device values or infer
+a reason from these counters. The disabled arm has no gap of 500 ms or more.
+This new pause means the pressure-test fix does not eliminate all serving pauses.
+
+RC4 prefetch-on pair 41186 is running in reverse order (enabled then disabled).
+Earlier model results below are retained RC2/RC3 evidence. Production promotion
+remains open.
 Use one active serving worker per GPU without unrelated co-located GPU workloads;
 cross-process native-wait scheduling/QoS is outside current qualification.
 
