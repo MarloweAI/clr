@@ -2079,10 +2079,10 @@ address VirtualGPU::ManagedBuffer::Acquire(uint32_t size, uint32_t alignment) {
 // but unavailable instruction storage must not introduce an additional host wait.
 address VirtualGPU::ManagedBuffer::TryAcquire(uint32_t size, uint32_t alignment) {
   assert(alignment != 0);
-  address result = amd::alignUp(pool_base_ + pool_cur_offset_, alignment);
-  if ((result + size) - pool_base_ <= pool_chunk_end_) {
-    pool_cur_offset_ = (result + size) - pool_base_;
-    return result;
+  uint32_t offset = amd::alignUp(pool_cur_offset_, alignment);
+  if (size <= pool_chunk_end_ && offset <= pool_chunk_end_ - size) {
+    pool_cur_offset_ = offset + size;
+    return pool_base_ + offset;
   }
   const uint32_t next_chunk = (active_chunk_ + 1) % num_chunk_signals_;
   if (Hsa::signal_load_scacquire(pool_signal_[next_chunk]) != 0) {
@@ -2097,10 +2097,10 @@ address VirtualGPU::ManagedBuffer::TryAcquire(uint32_t size, uint32_t alignment)
   const uint32_t chunk_size = pool_size_ / num_chunk_signals_;
   pool_cur_offset_ = active_chunk_ * chunk_size;
   pool_chunk_end_ = pool_cur_offset_ + chunk_size;
-  result = amd::alignUp(pool_base_ + pool_cur_offset_, alignment);
-  assert((result + size) - pool_base_ <= pool_chunk_end_);
-  pool_cur_offset_ = (result + size) - pool_base_;
-  return result;
+  offset = amd::alignUp(pool_cur_offset_, alignment);
+  assert(size <= pool_chunk_end_ && offset <= pool_chunk_end_ - size);
+  pool_cur_offset_ = offset + size;
+  return pool_base_ + offset;
 }
 
 // ================================================================================================
