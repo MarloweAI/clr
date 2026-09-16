@@ -2,6 +2,74 @@
 
 ## Current RC4 candidate
 
+### Partial overlap and two/four-stream continuation
+
+The extension in `benchmarks/attention_stream_chains` adds genuine data-dependent
+join → query update → next-stage chains, balanced and 7/8-uneven partitions, and a
+control with 2,048 CTAs per branch. Each case compares two/four parallel streams
+with matching serial and wide single-stream schedules. Useful KV token work stays
+fixed across schedules and arities. Stage counts change the query-feedback
+computation; comparisons below are within each configuration.
+
+Job 45210, one MI355X on node2, three fresh-process rounds per runtime:
+
+| Configuration | Partitions | RC4 off serial ms | RC4 off parallel ms | RC4 on parallel ms | RC4 off wide ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Balanced, one long stage | 2 | 2.8786 | 1.5439 | 1.6055 | 1.4434 |
+| Balanced, one long stage | 4 | 2.8772 | 0.8423 | 0.8992 | 0.7813 |
+| Balanced, 64 stages | 2 | 3.4268 | 3.1436 | 5.9513 | 1.8378 |
+| Balanced, 64 stages | 4 | 3.8688 | 3.6973 | 6.5402 | 1.2520 |
+| Uneven, 64 stages | 2 | 3.4572 | 3.4762 | 3.8242 | 2.9183 |
+| Uneven, 64 stages | 4 | 3.8891 | 4.5321 | 6.3737 | 3.0050 |
+| Occupied control | 2 | 1.0346 | 1.0326 | 1.0651 | 1.0201 |
+| Occupied control | 4 | 1.0527 | 1.0375 | 1.0803 | 1.0172 |
+
+Values are medians of three process medians, with 16 measured trials per cell and
+runtime/schedule order rotated. Stock reproduces the off-arm behavior: uneven
+64-stage two/four-stream times are 3.4772/4.5396 ms; balanced 64-stage times are
+3.1417/3.6973 ms. Every sample is retained.
+
+Partial overlap is insufficient when the main branch owns 7/8 of the work: the
+ideal speedup is near 8/7 before synchronization. With 64 uneven stages, four
+streams are 16.5% slower than matching serial with waits off and 30.4% slower than
+two parallel streams for the same useful work. Aggregate join gaps increase
+250 → 1,026 us with two → four streams, while branch windows barely change.
+The occupied control also gains essentially nothing from stream concurrency.
+
+Native waits add another failure mode. In balanced 64-stage two-stream chains,
+each branch lasts about 24–25 us. All 64 stages have overlapping branch envelopes
+with waits off; with waits on, 45/44/48 of 64 stages lose overlap entirely in the
+three retained trial-0 timelines. Paired process regressions are 89.1–89.8%.
+Aggregate enclosing branch windows increase 1.975 → 3.379 ms and join gaps
+0.623 → 2.101 ms, explaining most of the 2.81 ms latency increase. The individual
+branch spans do not grow. Four streams do not cure the repeated boundary cost.
+For uneven 64-stage chains, native-on four-stream latency is 66.7% greater than
+two-stream latency and regresses 38.3–40.9% versus off in every paired round.
+
+The native prewait adds a vendor packet before the original AQL dependency.
+A delay hidden by a long main branch can become exposed when branches are short
+or more joins are added. The exact firmware source of the boundary latency is
+not yet proven. A separate trace-enabled diagnostic records 10,404 native packets,
+nine pool rotations and zero pool fallbacks; its timings are excluded. This is
+not the previously fixed instruction-pool submission stall in that diagnostic.
+
+All 6,048 measured operations pass independent double-precision CPU reference
+(155,713,536 output elements; maximum absolute error 3.58e-7, tolerance 5e-5).
+Every operation checks dependency ordering. The independent analyzer validates
+35,208 retained trial-0 branch/join envelopes against the aggregate timing CSV.
+All nine process library identities match the pinned stock or RC4 hashes. The
+allocation completed and was released. These are synthetic FP32 attention-like
+kernels in one allocation, not tuned attention or independent-job replication.
+CTA envelopes do not establish actual CU utilization. Native waits remain opt-in;
+this extension does not alter the separate standard GLM serving results.
+
+Executed producer manifest:
+`63506bd8c05ff8cda6e0b31b97491238b0ca625e532a4d4cdce08cdbb3b87bc0`.
+Exact producer and `benchmarks/analyze_attention_stream_chains.py` are committed.
+Full stock/off/on tables, paired process comparisons, CPU-reference hashes,
+timelines and audit remain in `attention-stream-chains-45210-final`, with the pilot
+and trace bundles retained separately outside Git.
+
 ### Large-kernel fork/join regression
 
 The attention-like fork/join microbenchmark in `benchmarks/attention_fork_join`
