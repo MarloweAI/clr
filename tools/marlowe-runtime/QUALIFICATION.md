@@ -89,9 +89,12 @@ after correcting the baseline scorer to inspect the final-answer channel.
 A 565 ms stock-runtime token gap overlaps 280–536 ms of KFD queue-eviction
 accounting across TP workers, with no recorded long GC pause. This is a driver
 lead, not the cause of all pauses. The installed driver exposes per-process
-eviction reason events. A one-GPU subscription probe passed; a separate instrumented
-model diagnostic is queued. Its timings will not be mixed into the primary
-comparison. No host driver, firmware or kernel policy was changed.
+eviction reason events. A one-GPU subscription probe and a separate instrumented
+model diagnostic passed. The model capture recorded two short startup USERPTR
+eviction episodes, but no evictions in measured decode windows and no token gaps
+of 500 ms or more. The earlier large pauses did not reproduce, so their cause
+remains unresolved. Instrumented timings are excluded from the primary comparison.
+No host driver, firmware or kernel policy was changed.
 
 Upload ASan processes complete workload checks but fail during shutdown with
 native waits both disabled and enabled. They are not counted as sanitizer passes.
