@@ -1,7 +1,7 @@
 # Supply the qualified ROCm base by immutable registry digest.
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
-ARG RUNTIME_RELEASE=marlowe-hip-7.2.4-native-wait-v7-rc3
+ARG RUNTIME_RELEASE=marlowe-hip-7.2.4-native-wait-v7-rc4
 ARG RUNTIME_SHA256
 USER root
 COPY runtime.tar.gz /tmp/marlowe-runtime.tar.gz

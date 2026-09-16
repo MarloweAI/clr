@@ -9,6 +9,8 @@ import sys
 
 work, recipe = [Path(p).resolve() for p in sys.argv[1:]]
 lock = json.loads((recipe / 'source-lock.json').read_text())
+if os.environ.get('RUNTIME_BUILD_BASE_IMAGE') != lock['build_base_image']:
+    raise SystemExit('Build orchestrator must supply the pinned RUNTIME_BUILD_BASE_IMAGE identity')
 for project in ['clr', 'hip']:
     actual = subprocess.check_output(['git', '-C', str(work / project), 'rev-parse', 'HEAD'], text=True).strip()
     if actual != lock[project + '_commit']:
@@ -19,14 +21,14 @@ for project in ['clr', 'hip']:
 rocm = Path(os.environ.get('ROCM_PATH', '/opt/rocm'))
 hip = work / 'build/hipamd/lib' / lock['hip_library']
 hsa = (rocm / 'lib/libhsa-runtime64.so').resolve(strict=True)
-if hsa.name != lock['hsa_library']:
+if hsa.name != lock['hsa_library'] or hashlib.sha256(hsa.read_bytes()).hexdigest() != lock['hsa_sha256']:
     raise SystemExit(f'Unqualified HSA runtime: {hsa}')
 out = work / 'dist' / lock['release']
 if out.exists():
     raise SystemExit(f'Refusing to replace existing release {out}')
 (out / 'lib').mkdir(parents=True)
 (out / 'licenses').mkdir()
-manifest = dict(lock, libraries={}, build_tools={})
+manifest = dict(lock, libraries={}, aliases={}, build_tools={})
 for library, aliases in [(hip, ['libamdhip64.so', 'libamdhip64.so.7']),
                          (hsa, ['libhsa-runtime64.so', 'libhsa-runtime64.so.1'])]:
     destination = out / 'lib' / library.name
@@ -34,6 +36,7 @@ for library, aliases in [(hip, ['libamdhip64.so', 'libamdhip64.so.7']),
     manifest['libraries'][library.name] = hashlib.sha256(destination.read_bytes()).hexdigest()
     for alias in aliases:
         (out / 'lib' / alias).symlink_to(destination.name)
+        manifest['aliases'][alias] = destination.name
 for name in ['run', 'verify.py']:
     shutil.copy2(recipe / name, out / name)
 for project in ['clr', 'hip']:

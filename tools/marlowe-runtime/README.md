@@ -9,7 +9,10 @@ the PyTorch wait result, isolated runtime toggle tests and stock-image compariso
 
 Use a ROCm7.2.4 Linux build image with matching compiler, COMGR, headers and HSA,
 CMake, Git, Python pip and setuptools. Pin and record the base image digest in
-your build system. The tested development environment is the SGLang ROCm7.2.4
+your build system. Set `RUNTIME_BUILD_BASE_IMAGE` to the immutable identity in
+`source-lock.json`; assembly rejects missing or different identities and verifies
+the actual HSA bytes against the lock. This identity is supplied by the build
+orchestrator, not inferred or attested from inside the container. The tested development environment is the SGLang ROCm7.2.4
 MI35x image; this overlay is not a complete standalone ROCm distribution.
 
 ```
@@ -32,9 +35,10 @@ GPU_NATIVE_EVENT_WAIT=0 /opt/marlowe/runtime/<release>/run python app.py
 GPU_NATIVE_EVENT_WAIT=1 /opt/marlowe/runtime/<release>/run python app.py
 ```
 
-The launcher verifies packaged bytes before exec and selects HIP and HSA together.
-It deliberately preloads by library name with the package directory first in
-LD_LIBRARY_PATH: absolute preload paths allowed a second bundled HIP library to
+The launcher verifies packaged bytes and preload symlink targets before exec and
+selects HIP and HSA together.
+It preserves the base image's library search order after prepending only the
+package directory. It deliberately preloads by library name: absolute preload paths allowed a second bundled HIP library to
 load in the tested PyTorch image. Check the actual process with `verify.py` under
 the same launcher; an independent probe is useful but is not a substitute for
 worker-level runtime identity receipts in a distributed service.

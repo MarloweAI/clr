@@ -14,6 +14,17 @@ def verify(files_only=False):
         path = root / 'lib' / name
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise RuntimeError(f'Runtime digest mismatch: {path}')
+    aliases = manifest.get('aliases', {})
+    for stem in ('libamdhip64.so', 'libhsa-runtime64.so'):
+        if stem not in aliases:
+            raise RuntimeError(f'Missing preload alias in manifest: {stem}')
+    for alias, target in aliases.items():
+        path = root / 'lib' / alias
+        expected = root / 'lib' / target
+        if target not in manifest['libraries'] or not path.is_symlink():
+            raise RuntimeError(f'Invalid runtime alias: {path}')
+        if path.resolve(strict=True) != expected:
+            raise RuntimeError(f'Runtime alias points to an unexpected library: {path}')
     if files_only:
         return manifest
     import torch
@@ -21,7 +32,8 @@ def verify(files_only=False):
     mapped = {}
     for stem in ('libamdhip64.so', 'libhsa-runtime64.so'):
         paths = {Path(line.split()[-1]).resolve() for line in Path('/proc/self/maps').read_text().splitlines() if stem in line}
-        if len(paths) != 1 or next(iter(paths)).parent != root / 'lib':
+        expected = root / 'lib' / aliases[stem]
+        if paths != {expected}:
             raise RuntimeError(f'Unexpected or duplicated runtime: {stem}: {paths}')
         mapped[stem] = str(next(iter(paths)))
     lib = ctypes.CDLL(mapped['libamdhip64.so'])

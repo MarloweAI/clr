@@ -1,5 +1,9 @@
 # Release evidence and promotion status
 
+The current producer targets RC4 after review fixes. RC4 has not yet been built
+or qualified; the measurements below belong to the retained RC3 artifact unless
+explicitly labelled RC2. A new artifact needs its own qualification receipts.
+
 RC3 removes about 96% of the added wait cost in the original pattern using
 ordinary PyTorch. Model results are promising but do not yet justify production
 promotion. The feature remains disabled by default.
@@ -77,11 +81,12 @@ generation termination. Original responses and scores are retained. These probes
 are not a comprehensive model correctness evaluation. Natural outputs also vary
 within each mode, so differing output text alone is not attributed to the patch.
 
-Three existing GPT-OSS20B workload screens—balanced 1024/1024, prefill-stress
+Three existing GPT-OSS20B workload screens on RC2—balanced 1024/1024, prefill-stress
 8192/1024 and decode-stress 1024/8192—show overlapping timing ranges, with median
 changes of -0.12%, -0.08% and -1.11% (jobs 40718/40729). The first two have common
 decode windows shorter than five seconds. These are short screens, not canonical
-replicated serving benchmarks. Fifteen simple known answers pass in each mode
+replicated serving benchmarks or RC3 qualification. Fifteen simple known answers
+on RC2 pass in each mode
 after correcting the baseline scorer to inspect the final-answer channel.
 
 ## Driver investigation and remaining gates

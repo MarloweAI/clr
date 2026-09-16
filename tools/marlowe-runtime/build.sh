@@ -3,6 +3,8 @@
 set -euo pipefail
 recipe=$(cd "$(dirname "$0")" && pwd)
 : "${RUNTIME_WORK_DIR:?Set RUNTIME_WORK_DIR to a new build directory}"
+: "${RUNTIME_BUILD_BASE_IMAGE:?Set the immutable build image identity from source-lock.json}"
+export RUNTIME_BUILD_BASE_IMAGE
 : "${ROCM_PATH:=/opt/rocm}"
 : "${RUNTIME_BUILD_JOBS:=8}"
 mkdir -p "$RUNTIME_WORK_DIR"
