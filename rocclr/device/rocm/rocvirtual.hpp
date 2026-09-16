@@ -217,6 +217,9 @@ class VirtualGPU : public device::VirtualDevice {
     //! Acquires custom aligned memory for use on the gpu
     address Acquire(uint32_t size, uint32_t alignment);
 
+    //! Optional native instructions fall back instead of waiting for a busy chunk.
+    address TryAcquire(uint32_t size, uint32_t alignment);
+
     uint64_t Rotations() const { return pool_rotations_; }
 
     //! Reset mem pool
@@ -479,6 +482,7 @@ class VirtualGPU : public device::VirtualDevice {
  private:
   //! Dispatches a barrier with blocking HSA signals
   void dispatchNativeEventWait(hsa_signal_t signal);
+  void dispatchNativeWaitRetirement(hsa_signal_t signal);
   void dispatchBlockingWait();
 
   bool dispatchAqlPacket(hsa_kernel_dispatch_packet_t* packet, uint16_t header, uint16_t rest,
@@ -621,6 +625,7 @@ class VirtualGPU : public device::VirtualDevice {
   bool native_wait_enabled_ = false;
   uint64_t native_wait_count_ = 0;
   uint64_t native_irq_wait_count_ = 0;
+  uint64_t native_pool_fallback_count_ = 0;
 
   static constexpr uint32_t kStagingPoolNumSignals = 4; //!< Hsa Signal count for Staging Buffer
   static constexpr uint32_t kKernArgPoolNumSignals = 16; //!< Hsa Signal count for KernArg Buffer

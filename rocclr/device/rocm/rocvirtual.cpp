@@ -1229,10 +1229,15 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
     pointer = const_cast<volatile hsa_signal_value_t*>(&amd_signal->value);
     if (GPU_NATIVE_EVENT_TRACE) ++native_irq_wait_count_;
   }
-  auto* ib = reinterpret_cast<uint32_t*>(native_wait_buffer_.Acquire(28, 64));
   const uintptr_t address = reinterpret_cast<uintptr_t>(pointer);
+  if (address & 3) return;
+  auto* ib = reinterpret_cast<uint32_t*>(native_wait_buffer_.TryAcquire(28, 64));
+  if (ib == nullptr) {
+    if (GPU_NATIVE_EVENT_TRACE) ++native_pool_fallback_count_;
+    return; // The original AQL packet still carries this dependency.
+  }
   const uintptr_t base = reinterpret_cast<uintptr_t>(ib);
-  if ((address & 3) || (base & 3) || (base >> 48)) return;
+  if ((base & 3) || (base >> 48)) return;
   if (GPU_NATIVE_EVENT_TRACE) ++native_wait_count_;
   ib[0] = 0xc0053c00; // Type 3 WAIT_REG_MEM, seven DWORDs.
   ib[1] = 3 | (1 << 4); // Equal, memory space; ACE offload disabled.
@@ -1257,7 +1262,9 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
   packet.remain = 0xa;
   const uint32_t mask = gpu_queue_->size - 1;
   const uint64_t index = Hsa::queue_add_write_index_screlease(gpu_queue_, 1);
-  while (index - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {}
+  while (index - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {
+    amd::Os::yield();
+  }
   auto* slot = &reinterpret_cast<NativePacket*>(gpu_queue_->base_address)[index & mask];
   *slot = packet;
   TrackQueueProgress(packet, index);
@@ -1273,6 +1280,27 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
   hasPendingDispatch_ = true;
 }
 
+// Retire native instructions with a local packet. This can run while an outer
+// barrier is being assembled: do not consume tracker dependencies, overwrite
+// barrier_packet_, or recurse through dispatchNativeEventWait.
+void VirtualGPU::dispatchNativeWaitRetirement(hsa_signal_t signal) {
+  hsa_barrier_and_packet_t packet{};
+  packet.header = kInvalidAql;
+  packet.completion_signal = signal;
+  const uint32_t mask = gpu_queue_->size - 1;
+  const uint64_t index = Hsa::queue_add_write_index_screlease(gpu_queue_, 1);
+  while (index - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {
+    amd::Os::yield();
+  }
+  auto* slot = &reinterpret_cast<hsa_barrier_and_packet_t*>(gpu_queue_->base_address)[index & mask];
+  *slot = packet;
+  TrackQueueProgress(packet, index);
+  packet_store_release(reinterpret_cast<uint32_t*>(slot), kBarrierPacketHeader, 0);
+  Hsa::signal_store_screlease(gpu_queue_->doorbell_signal, index);
+  hasPendingDispatch_ = true;
+}
+
+// ================================================================================================
 void VirtualGPU::dispatchBlockingWait() {
   auto wait_signals = Barriers().WaitingSignal();
   for (auto signal : wait_signals) dispatchNativeEventWait(signal);
@@ -1861,10 +1889,11 @@ VirtualGPU::~VirtualGPU() {
   }
 
   if (GPU_NATIVE_EVENT_TRACE && native_wait_enabled_) {
-    fprintf(stderr, "NATIVE_EVENT_QUEUE index=%u waits=%llu irq=%llu rotations=%llu\n",
+    fprintf(stderr, "NATIVE_EVENT_QUEUE index=%u waits=%llu irq=%llu rotations=%llu pool_fallbacks=%llu\n",
             index_, static_cast<unsigned long long>(native_wait_count_),
             static_cast<unsigned long long>(native_irq_wait_count_),
-            static_cast<unsigned long long>(native_wait_buffer_.Rotations()));
+            static_cast<unsigned long long>(native_wait_buffer_.Rotations()),
+            static_cast<unsigned long long>(native_pool_fallback_count_));
   }
   releasePinnedMem();
 
@@ -2042,6 +2071,35 @@ address VirtualGPU::ManagedBuffer::Acquire(uint32_t size, uint32_t alignment) {
     pool_cur_offset_ = (result + size) - pool_base_;
   }
 
+  return result;
+}
+
+// ================================================================================================
+// Native pre-waits are optional. Queue-capacity backpressure still applies,
+// but unavailable instruction storage must not introduce an additional host wait.
+address VirtualGPU::ManagedBuffer::TryAcquire(uint32_t size, uint32_t alignment) {
+  assert(alignment != 0);
+  address result = amd::alignUp(pool_base_ + pool_cur_offset_, alignment);
+  if ((result + size) - pool_base_ <= pool_chunk_end_) {
+    pool_cur_offset_ = (result + size) - pool_base_;
+    return result;
+  }
+  const uint32_t next_chunk = (active_chunk_ + 1) % num_chunk_signals_;
+  if (Hsa::signal_load_scacquire(pool_signal_[next_chunk]) != 0) {
+    return nullptr;
+  }
+  // The current chunk is closed only after another chunk is available. The
+  // barrier's completion proves all preceding native instructions have retired.
+  Hsa::signal_silent_store_relaxed(pool_signal_[active_chunk_], kInitSignalValueOne);
+  gpu_.dispatchNativeWaitRetirement(pool_signal_[active_chunk_]);
+  ++pool_rotations_;
+  active_chunk_ = next_chunk;
+  const uint32_t chunk_size = pool_size_ / num_chunk_signals_;
+  pool_cur_offset_ = active_chunk_ * chunk_size;
+  pool_chunk_end_ = pool_cur_offset_ + chunk_size;
+  result = amd::alignUp(pool_base_ + pool_cur_offset_, alignment);
+  assert((result + size) - pool_base_ <= pool_chunk_end_);
+  pool_cur_offset_ = (result + size) - pool_base_;
   return result;
 }
 

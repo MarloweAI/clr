@@ -25,6 +25,9 @@
 #include <hip/hip_runtime.h>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <set>
+#include <string>
 #define CHECK(call) do { auto check_status = (call); if (check_status != hipSuccess) { \
   std::fprintf(stderr, "%s: %s\n", #call, hipGetErrorString(check_status)); std::exit(1); \
 } } while (0)
@@ -33,6 +36,24 @@ int main() {
   int count;
   CHECK(hipGetDeviceCount(&count));
   if (count != 1) { std::fprintf(stderr, "Require one allocated GPU\n"); return 1; }
+  std::set<std::string> hip_paths, hsa_paths;
+  std::ifstream maps("/proc/self/maps");
+  std::string line;
+  while (std::getline(maps, line)) {
+    auto pos = line.find('/');
+    if (pos == std::string::npos) continue;
+    auto path = line.substr(pos);
+    if (path.find("libamdhip64.so") != std::string::npos) hip_paths.insert(path);
+    if (path.find("libhsa-runtime64.so") != std::string::npos) hsa_paths.insert(path);
+  }
+  if (hip_paths.size() != 1 || hsa_paths.size() != 1) {
+    std::fprintf(stderr, "Missing or duplicate HIP/HSA mappings\n");
+    return 1;
+  }
+  int runtime_version = 0;
+  CHECK(hipRuntimeGetVersion(&runtime_version));
+  std::fprintf(stderr, "RUNTIME_IDENTITY_CPP hip=%s hsa=%s version=%d\n",
+               hip_paths.begin()->c_str(), hsa_paths.begin()->c_str(), runtime_version);
   hipStream_t compute, side;
   CHECK(hipStreamCreateWithFlags(&compute, hipStreamNonBlocking));
   CHECK(hipStreamCreateWithFlags(&side, hipStreamNonBlocking));

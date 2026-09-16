@@ -29,3 +29,19 @@ This release backport is default-off and gfx950-only. It retains the original
 AQL dependency packet after a native prewait. IRQ-backed signal layout and PM4
 encoding follow ROCr internals and require an AMD-owned supported interface for
 broader deployment. Do not treat this test alone as production qualification.
+
+`native_pool_pressure.cpp` is a bounded enqueue-progress regression test. It holds
+one producer event pending while submitting 2,300 waits and consumer kernels on
+another stream, below the default AQL queue capacity. A two-second watchdog keeps
+a failing runtime recoverable. Exit 7 means the watchdog fired or the producer
+completed before all submissions; correct output alone is insufficient. The test
+uses one visible GPU and prints the actual HIP/HSA mappings. Compile with:
+
+```
+hipcc -O2 -std=c++17 -pthread --offload-arch=gfx950 native_pool_pressure.cpp -o native_pool_pressure
+GPU_NATIVE_EVENT_WAIT=1 <release>/run ./native_pool_pressure
+```
+
+The original RC3 runtime needs watchdog release at the second native instruction
+pool rotation; its disabled mode completes submission while the event is pending.
+The optional native path must fall back to AQL when an instruction chunk is busy.
