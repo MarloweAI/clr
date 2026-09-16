@@ -2,6 +2,56 @@
 
 ## Current RC4 candidate
 
+### Large-kernel fork/join regression
+
+The attention-like fork/join microbenchmark in `benchmarks/attention_fork_join`
+adds a workload where each branch is one substantial kernel rather than a chain
+of tiny dispatches. Query preparation feeds two independent key/value partitions;
+a stable softmax merge joins their results. Serial, two-stream and wide
+single-stream schedules perform the same arithmetic and memory work.
+
+On one MI355X (job 45143), dimension 64 and 8,192 tokens per partition:
+
+| Query CTAs per branch | RC4 off: serial (ms) | RC4 off: two streams (ms) | RC4 on: two streams (ms) | RC4 off: wide single-stream (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 64 | 2.8676 | 1.5510 | 1.6080 | 1.4461 |
+| 128 | 2.8778 | 1.5481 | 1.6146 | 1.4471 |
+| 256 | 2.8778 | 1.5695 | 1.6288 | 1.5441 |
+
+Values are medians of three fresh-process medians, with runtime order rotated
+and 24 schedule-rotated measured trials per shape in each process. Two streams
+are approximately 1.83–1.86x faster than serial with native waits disabled.
+Native waits regress the two-stream case by 3.5–4.5% in every paired round;
+serial and wide timings change by less than 0.7%. The wider single-stream control
+shows that exposing more work in one launch can outperform separate streams.
+
+At 128 queries, native waits add about 31 microseconds before the second branch
+starts and 33 microseconds between branch completion and the join starting.
+Branch execution spans remain nearly unchanged. These dependency-boundary costs
+account for most of the measured regression. With only two long branch kernels,
+there is little repeated-dispatch interference for the prewait to remove. The
+measurements do not identify the precise instruction or firmware source of the
+extra boundary latency.
+
+All 1,944 measured operations passed comparison with independent double-precision
+CPU attention (18,579,456 output elements; maximum absolute error 2.29e-8).
+All 648 parallel joins were pending at submission, and per-CTA timestamps confirm
+kernel-envelope overlap. All nine process HIP/HSA mappings and hashes were
+verified. The stock arm uses the pinned image's `/opt/rocm` libraries; off/on use
+the same RC4 package. No newer graph-scheduling patch is included.
+
+This is a simple FP32 attention-like kernel, not a tuned attention implementation
+or evidence about every production workload. One allocation and repeated fresh
+processes do not constitute independent job replication. The runtime remains
+opt-in; the tiny-kernel microbenchmark win does not justify global enablement.
+
+Executed producer manifest: `a515e9d4bc9cbac7f1e27cedb4b0dcfd8557ea763a266d1245140f8d2ede772f`.
+The exact producer is committed alongside `benchmarks/analyze_attention_fork_join.py`.
+Raw runs, full stock/off/on tables, CPU-reference hashes and the audit are retained
+outside Git in the `attention-fork-join-45143-final` result bundle.
+
+### Previous RC4 qualification
+
 Three Claude Fable review passes identified and checked fixes for instruction-pool
 host stalls, re-entrant barrier construction, missing preload-alias validation and
 unpinned HSA bytes. The source lock now targets
