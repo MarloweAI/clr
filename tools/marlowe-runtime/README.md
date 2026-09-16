@@ -25,7 +25,9 @@ licenses, and produces a relocatable directory plus a tar archive and its digest
 Optional embedded HIP PCH is disabled, matching the qualified build configuration.
 Runtime-compilation use cases need separate qualification.
 
-Copy the extracted release into `/opt/marlowe/runtime/<release>` in a derived
+For existing Slurm/Pyxis deployments, [use a pinned SQSH base plus the versioned
+overlay](SLURM.md); an OCI registry is not required for that path. Alternatively,
+copy the extracted release into `/opt/marlowe/runtime/<release>` in a derived
 image. Preserve symlinks. Do not overwrite system ROCm libraries. The matching
 base image supplies the remaining dependencies. Keep this layer identical in
 control and candidate containers.

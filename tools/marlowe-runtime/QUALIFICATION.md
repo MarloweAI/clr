@@ -46,9 +46,33 @@ accounting over a 1.017 s sampling bracket. Do not sum per-device values or infe
 a reason from these counters. The disabled arm has no gap of 500 ms or more.
 This new pause means the pressure-test fix does not eliminate all serving pauses.
 
-RC4 prefetch-on pair 41186 is running in reverse order (enabled then disabled).
-Earlier model results below are retained RC2/RC3 evidence. Production promotion
-remains open.
+RC4 prefetch-on pair 41186 completed in reverse order (enabled then disabled).
+Median time per output token changes by -1.96% at concurrency 1, with overlapping
+ranges, and -8.56% at concurrency 4, with non-overlapping ranges. Each arm passes
+3/3 long-context answers and all six process identities. All mapped library files
+are readable; common paths have identical hashes. Temporary/cached TileLang JIT
+library differences remain visible in this pair too.
+
+| RC4 disabled → enabled | C1 median TPOT | C4 median TPOT | Wave ranges overlap? |
+| --- | ---: | ---: | --- |
+| Prefetch off, 41183 | -13.99% | -6.39% | Neither |
+| Prefetch on, 41186 | -1.96% | -8.56% | C1 only |
+
+The prefetch-on disabled and enabled arms contain respective 1.545 s and 1.562 s
+measured token gaps. These stay in the comparison. Both overlap increases in
+KFD eviction accounting: maximum per-device deltas across the four TP workers
+are 617–845 ms disabled and 717–773 ms enabled, across respective 2.035 s and
+2.020 s sample brackets. Neither gap overlaps recorded GC; the disabled arm has
+one minor CPU page fault per worker and zero major faults, while enabled has
+zero CPU fault deltas. These counters do not identify the eviction reason.
+
+All four RC4 arms completed successfully: 12/12 long-context retrieval answers,
+24 actual-process HIP/HSA identity receipts, and all 24 measured waves. This is
+scoped model qualification, not independent replication or a serving soak. There
+is no clear concurrency-1 prefetch-on win; the remaining gains require canary
+validation. The large pauses persist with the feature both off and on. Earlier
+model results below retain their RC2/RC3 identity. Production promotion remains
+open; the current bounded experimental campaign is complete.
 Use one active serving worker per GPU without unrelated co-located GPU workloads;
 cross-process native-wait scheduling/QoS is outside current qualification.
 
@@ -165,9 +189,11 @@ opt-in canary with restart, output-health, memory, TTFT and decode-tail checks.
 Exact traffic gates and named owners belong in the deployment release record;
 these outstanding gates are not represented as completed here.
 
-The container recipe provides an integration path, but no OCI image or production
-canary has been validated. Pin the registry base by digest and deploy the verified
-archive via the launcher. Disabling native waits requires worker restart; full
+The existing Slurm/Pyxis integration runs the verified overlay on the pinned SQSH
+base; [deployment and rollback instructions](SLURM.md) describe this tested path.
+An OCI image is an optional distribution path and has not been built or validated.
+No production canary has been completed. Pin the base and archive identities and
+deploy through the launcher. Disabling native waits requires worker restart; full
 rollback restores the stock image and removes both replacement libraries.
 
 The interim backport depends on the pinned ROCr internal signal ABI and vendor
