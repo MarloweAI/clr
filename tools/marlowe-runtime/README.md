@@ -4,6 +4,9 @@ Build and package the gfx950 event-wait backport as a userspace HIP/HSA overlay.
 The package is independent of SGLang and HiSparse and uses unchanged HIP/PyTorch
 APIs. This release candidate is opt-in and is not yet production-qualified.
 
+[Qualification evidence and open promotion gates](QUALIFICATION.md) distinguish
+the PyTorch wait result, isolated runtime toggle tests and stock-image comparisons.
+
 Use a ROCm7.2.4 Linux build image with matching compiler, COMGR, headers and HSA,
 CMake, Git, Python pip and setuptools. Pin and record the base image digest in
 your build system. The tested development environment is the SGLang ROCm7.2.4
