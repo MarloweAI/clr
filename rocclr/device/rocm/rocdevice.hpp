@@ -88,12 +88,9 @@ class ProfilingSignal : public amd::ReferenceCountedObject {
   } Flags;
 
   Flags flags_;
-  // Immutable for each retained signal generation; advisory scheduling only.
   // Advisory metadata for this retained signal generation. No queue/object
   // pointer escapes; a consumer rechecks queue progress under the device lock.
-  std::atomic<uint64_t> native_dispatch_hint_{0};
-  std::atomic<uint64_t> native_kernel_end_{0};
-  std::atomic<uint64_t> native_producer_id_{0};
+  std::atomic<uint64_t> native_threshold_index_{std::numeric_limits<uint64_t>::max()};
   std::atomic<uint64_t> native_producer_queue_id_{std::numeric_limits<uint64_t>::max()};
 
   //! Cached timing data - populated when signal completes, avoids repeated HSA calls

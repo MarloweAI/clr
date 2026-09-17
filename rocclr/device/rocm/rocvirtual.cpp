@@ -582,21 +582,9 @@ hsa_signal_t VirtualGPU::HwQueueTracker::ActiveSignal(hsa_signal_value_t init_va
     prof_signal->native_producer_queue_id_.store(
         gpu_.gpu_queue_ == nullptr ? std::numeric_limits<uint64_t>::max() : gpu_.gpu_queue_->id,
         std::memory_order_relaxed);
-    prof_signal->native_producer_id_.store(gpu_.native_producer_identity_,
-                                           std::memory_order_relaxed);
-    uint64_t pending_dispatch_hint = 0;
-    if (engine_ == HwQueueEngine::Compute && gpu_.gpu_queue_ != nullptr &&
-        gpu_.native_kernel_end_ > gpu_.native_kernel_begin_) {
-      const uint64_t read = Hsa::queue_load_read_index_scacquire(gpu_.gpu_queue_);
-      const uint64_t first_pending = std::max(read, gpu_.native_kernel_begin_);
-      if (gpu_.native_kernel_end_ > first_pending) {
-        pending_dispatch_hint = gpu_.native_kernel_end_ - first_pending;
-      }
-    }
-    prof_signal->native_dispatch_hint_.store(pending_dispatch_hint,
-                                            std::memory_order_relaxed);
-    prof_signal->native_kernel_end_.store(gpu_.native_kernel_end_,
-                                         std::memory_order_relaxed);
+    prof_signal->native_threshold_index_.store(
+        engine_ == HwQueueEngine::Compute ? gpu_.NativeThresholdIndex() :
+        std::numeric_limits<uint64_t>::max(), std::memory_order_relaxed);
   }
 
   if (nullptr != cmd) {
@@ -653,11 +641,10 @@ std::vector<hsa_signal_t>& VirtualGPU::HwQueueTracker::WaitingSignal(HwQueueEngi
   bool explicit_wait = false;
   // Reset all current waiting signals
   waiting_signals_.clear();
-  waiting_native_hints_.clear();
   waiting_native_queue_ids_.clear();
-  waiting_native_kernel_ends_.clear();
-  waiting_breaks_dispatch_run_ = engine_ != HwQueueEngine::Compute ||
-                                engine != HwQueueEngine::Compute;
+  waiting_native_threshold_indices_.clear();
+  waiting_breaks_native_history_ = engine_ != HwQueueEngine::Compute ||
+                                   engine != HwQueueEngine::Compute;
 
   // Does runtime switch the active engine?
   if (engine != engine_) {
@@ -706,14 +693,18 @@ std::vector<hsa_signal_t>& VirtualGPU::HwQueueTracker::WaitingSignal(HwQueueEngi
         // Add HSA signal for tracking on GPU
         waiting_signals_.push_back(external_signals_[i]->signal_);
         if (gpu_.native_wait_enabled_) {
-          if (external_signals_[i]->native_producer_id_.load(std::memory_order_relaxed) !=
-              gpu_.native_producer_identity_) waiting_breaks_dispatch_run_ = true;
+          // A pending dependency starts a new independent dispatch segment.
+          // Preserve history across packet gaps, but not across short fork/join
+          // stages queued by a host running ahead of the device.
+          const uint64_t producer_queue_id =
+              external_signals_[i]->native_producer_queue_id_.load(std::memory_order_relaxed);
+          if (gpu_.gpu_queue_ == nullptr || producer_queue_id != gpu_.gpu_queue_->id) {
+            waiting_breaks_native_history_ = true;
+          }
           waiting_native_queue_ids_.push_back(
               external_signals_[i]->native_producer_queue_id_.load(std::memory_order_relaxed));
-          waiting_native_hints_.push_back(
-              external_signals_[i]->native_dispatch_hint_.load(std::memory_order_relaxed));
-          waiting_native_kernel_ends_.push_back(
-              external_signals_[i]->native_kernel_end_.load(std::memory_order_relaxed));
+          waiting_native_threshold_indices_.push_back(
+              external_signals_[i]->native_threshold_index_.load(std::memory_order_relaxed));
         }
       }
     }
@@ -1035,7 +1026,6 @@ bool VirtualGPU::processMemObjects(const amd::Kernel& kernel, const_address para
 uint64_t VirtualGPU::getQueueID() {
   amd::ScopedLock lock(execution());
   if (gpu_queue_ == nullptr) {
-    BreakNativeDispatchRun();
     gpu_queue_ = roc_device_.AcquireActiveNormalQueue();
   }
   return gpu_queue_->id;
@@ -1253,11 +1243,10 @@ bool VirtualGPU::dispatchGenericAqlPacket(AqlPacket* packet, uint16_t header, ui
 // Encoding follows ROCr rocm-7.2.4 AqlQueue::ExecutePM4 and amd_gpu_pm4.h.
 void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
   if (!native_wait_enabled_ || signal.handle == 0) return;
-  const uint64_t dispatch_hint = Barriers().NativeDispatchHint(signal);
-  if (dispatch_hint < kNativeWaitMinDispatches) return;
+  const uint64_t threshold_index = Barriers().NativeThresholdIndex(signal);
+  if (threshold_index == std::numeric_limits<uint64_t>::max()) return;
   const uint64_t producer_queue_id = Barriers().NativeProducerQueueId(signal);
-  // Logical streams can share one physical queue. Its native prewait cannot
-  // protect its own preceding dispatches from a separate queue's AQL wait.
+  // A native prewait only protects dispatch work on another physical queue.
   if (producer_queue_id == gpu_queue_->id ||
       producer_queue_id == std::numeric_limits<uint64_t>::max()) return;
   uint64_t read_index = 0;
@@ -1268,20 +1257,17 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
     }
     return;
   }
-  const uint64_t end = Barriers().NativeKernelEnd(signal);
-  const uint64_t remaining = end > read_index ? end - read_index : 0;
-  // Recheck at the consumer: the producer may have drained since signal creation.
-  // The original hint bounds this to the producer's own contiguous kernel range.
-  const uint64_t pending_dispatches = std::min(dispatch_hint, remaining);
   if (GPU_NATIVE_EVENT_TRACE) {
-    fprintf(stderr, "NATIVE_POLICY_CHECK producer=%llu hint=%llu end=%llu read=%llu pending=%llu\n",
+    fprintf(stderr, "NATIVE_POLICY_CHECK producer=%llu threshold_index=%llu read=%llu\n",
             static_cast<unsigned long long>(producer_queue_id),
-            static_cast<unsigned long long>(dispatch_hint),
-            static_cast<unsigned long long>(end),
-            static_cast<unsigned long long>(read_index),
-            static_cast<unsigned long long>(pending_dispatches));
+            static_cast<unsigned long long>(threshold_index),
+            static_cast<unsigned long long>(read_index));
   }
-  if (pending_dispatches < kNativeWaitMinDispatches) return;
+  // The recorded index is the oldest of 256 actual kernels, regardless of gaps.
+  // Rechecking this exact index cannot count intervening non-kernel packets or
+  // mistake a drained kernel history for currently outstanding work.
+  if (read_index > threshold_index) return;
+  const uint64_t pending_dispatches = kNativeWaitMinDispatches;
   const auto value = Hsa::signal_load_relaxed(signal);
   if (value != 1 && value != 2) return;
   volatile hsa_signal_value_t* pointer = nullptr;
@@ -1374,7 +1360,7 @@ void VirtualGPU::dispatchNativeWaitRetirement(hsa_signal_t signal) {
 // ================================================================================================
 void VirtualGPU::dispatchBlockingWait() {
   auto wait_signals = Barriers().WaitingSignal();
-  if (Barriers().WaitingBreaksDispatchRun()) BreakNativeDispatchRun();
+  if (Barriers().WaitingBreaksNativeHistory()) BreakNativeKernelHistory();
   for (auto signal : wait_signals) dispatchNativeEventWait(signal);
   // AQL dispatch doesn't support dependent signals and extra barrier packet must be generated
   for (uint32_t i = 0; i < wait_signals.size(); ++i) {
@@ -1475,7 +1461,9 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
       uint64_t index = startIndex + i;
 
       AqlPacket* packet = packets[packetIndex];
-      if (std::is_same<AqlPacket, hsa_kernel_dispatch_packet_t>::value) {
+      if (std::is_same<AqlPacket, hsa_kernel_dispatch_packet_t>::value &&
+          extractAqlBits(packet->header, HSA_PACKET_HEADER_TYPE,
+                         HSA_PACKET_HEADER_WIDTH_TYPE) == HSA_PACKET_TYPE_KERNEL_DISPATCH) {
         NoteNativeKernelPacket(index);
       }
 
@@ -1694,7 +1682,7 @@ void VirtualGPU::dispatchBarrierPacket(uint16_t packetHeader, bool skipSignal,
   if (!skipSignal) {
     // Make sure the wait is issued before queue index reservation
     auto wait_signals = Barriers().WaitingSignal();
-    if (Barriers().WaitingBreaksDispatchRun()) BreakNativeDispatchRun();
+    if (Barriers().WaitingBreaksNativeHistory()) BreakNativeKernelHistory();
     for (auto signal : wait_signals) dispatchNativeEventWait(signal);
     for (uint32_t i = 0; i < wait_signals.size(); ++i) {
       uint32_t j = i % 5;
@@ -1777,7 +1765,7 @@ void VirtualGPU::dispatchBarrierValuePacket(uint16_t packetHeader, bool resolveD
   assert(resolveDepSignal & (signal.handle != 0) == 0);
   if (resolveDepSignal) {
     auto wait_signals = Barriers().WaitingSignal();
-    if (Barriers().WaitingBreaksDispatchRun()) BreakNativeDispatchRun();
+    if (Barriers().WaitingBreaksNativeHistory()) BreakNativeKernelHistory();
     for (auto dependency : wait_signals) dispatchNativeEventWait(dependency);
     if (wait_signals.size() > 0) {
       barrier_value_packet_.signal = wait_signals[0];
@@ -1800,9 +1788,9 @@ void VirtualGPU::dispatchBarrierValuePacket(uint16_t packetHeader, bool resolveD
   auto cache_state = extractAqlBits(packetHeader, HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE,
                                     HSA_PACKET_HEADER_WIDTH_SCRELEASE_FENCE_SCOPE);
 
-  // Completion markers preserve a preceding dispatch prefix across empty markers.
-  // Explicit stream-memory waits start a different dependency segment.
-  if (!resolveDepSignal) BreakNativeDispatchRun();
+  // Explicit stream-memory/IPC waits can depend on foreign progress without
+  // going through WaitingSignal. They also end the independent kernel segment.
+  if (!resolveDepSignal) BreakNativeKernelHistory();
 
   if (completionSignal.handle == 0) {
     // Get active signal for current dispatch if profiling is necessary
@@ -1854,7 +1842,6 @@ void VirtualGPU::dispatchBarrierValuePacket(uint16_t packetHeader, bool resolveD
 
 // ================================================================================================
 void VirtualGPU::ResetQueueStates() {
-  BreakNativeDispatchRun();
   // Release all memory dependencies
   memoryDependency().clear();
 
@@ -1964,7 +1951,6 @@ VirtualGPU::~VirtualGPU() {
   if (tracking_created_) {
     amd::ScopedLock l(execution());
     if (gpu_queue_ == nullptr) {
-      BreakNativeDispatchRun();
       gpu_queue_ = roc_device_.AcquireActiveNormalQueue();
     }
     // Release the resources of signal
@@ -2011,11 +1997,6 @@ VirtualGPU::~VirtualGPU() {
 }
 
 // ================================================================================================
-uint64_t VirtualGPU::NextNativeProducerId() {
-  static std::atomic<uint64_t> next{1};
-  return next.fetch_add(1, std::memory_order_relaxed);
-}
-
 bool VirtualGPU::create() {
   // Pick a reasonable queue size
   uint32_t queue_size = ROC_AQL_QUEUE_SIZE;
@@ -2243,7 +2224,6 @@ void VirtualGPU::ReleaseHwQueue() {
     amd::ScopedLock lock(execution());
     if (gpu_queue_ != nullptr) {
       if (IsQueueIdle()) {
-        BreakNativeDispatchRun();
         if (roc_device_.ReleaseActiveNormalQueue(gpu_queue_)) {
           gpu_queue_ = nullptr;
         }
@@ -2259,7 +2239,6 @@ void VirtualGPU::ReleaseHwQueue() {
  */
 void VirtualGPU::profilingBegin(amd::Command& command, bool sdmaProfiling) {
   if (gpu_queue_ == nullptr) {
-    BreakNativeDispatchRun();
     gpu_queue_ = roc_device_.AcquireActiveNormalQueue();
   }
   // Track the current command
@@ -4275,7 +4254,6 @@ void VirtualGPU::submitMarker(amd::Marker& vcmd) {
       // It should be safe to call flush directly if there are not pending dispatches without
       // HSA signal callback
       if (gpu_queue_ == nullptr) {
-        BreakNativeDispatchRun();
         gpu_queue_ = roc_device_.AcquireActiveNormalQueue();
       }
       flush(vcmd.GetBatchHead());

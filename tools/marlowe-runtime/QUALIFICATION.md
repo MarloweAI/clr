@@ -1,6 +1,32 @@
 # Release evidence and promotion status
 
-## Selective v8 RC1 candidate — September 17, 2026
+## V9 admission revision — final-byte qualification in progress
+
+The [policy](NATIVE_WAIT_POLICY.md) now retains 256 actual own-kernel positions
+across packet gaps, while ending that history at pending cross-queue dependencies,
+compute/SDMA transitions and explicit stream-memory/IPC waits. This replaces v8's
+contiguous suffix. The versioned overlay remains opt-in and not production-qualified.
+
+Matched C1-off diagnostics isolated the v8 regression to admission: 17.217 ms/token
+with v8 policy versus 15.041 ms with own-position history in identical HIP bytes.
+The first clean history build reproduced 15.020 ms, but a performance-only Claude
+Fable review identified a missing queued-attention regime. The new
+[holdout](benchmarks/queued_streams/README.md) reproduced a 3.174→5.941 ms regression
+when 16 short fork/join steps were queued before synchronization. That build is
+rejected for handoff despite passing the preceding screen.
+
+The pending-dependency segment guard restores the prototype's queued two-stream
+time to 3.169 ms (off 3.166 ms) and removes native admissions in its queued-chain
+trace. One/two/three-consumer fanout still improves, including queue-cap-8 controls;
+a 5 ms delayed-consumer cell is neutral in total latency. These prototype results
+explain the policy revision; final packaged bytes need their own qualification.
+
+The current build and serving checks preserve the retained application, model and
+benchmark settings. Final release identity, results and handoff remain pending.
+C1-on, C4-off, C4-on, standard GLM on this revision and an operational canary are
+separate outstanding promotion evidence. No driver deployment is required.
+
+## Historical selective v8 RC1 candidate — September 17, 2026
 
 The [selective policy](NATIVE_WAIT_POLICY.md) is implemented at
 `77c75b8fa248f0dfc228df9a386289f868a247c2`; recipe commit
@@ -71,7 +97,7 @@ first-wave warmup notes are retained. The C4 stock gate reports steady decode
 with prefill-related throughput/TTFT variability. Metrics use Marlowe's unchanged
 reducer; these reported percentiles are not a separate global serving-tail study.
 
-Off C4 job46323 is queued on node2; on C4 and all three C16 arms remain outstanding.
+The table above is the historical four-cell checkpoint, not a current queue-status claim. Those v8 cells do not qualify a later runtime.
 The collector for on C1 required a transport recovery: all 121 copied files matched
 remote SHA-256 hashes before the stalled SSH child was released. The original GPU
 run and benchmark outputs were preserved. No runtime or benchmark change resulted.

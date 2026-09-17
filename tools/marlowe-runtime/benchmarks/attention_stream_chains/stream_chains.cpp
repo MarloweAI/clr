@@ -83,6 +83,7 @@ std::vector<float> cached_reference(int heads,int total,int stages,int seed,cons
  r=reference(heads,total,stages,seed);std::ofstream out(path,std::ios::binary);out.write(reinterpret_cast<char*>(r.data()),r.size()*sizeof(float));if(!out)exit(3);return r;
 }
 struct Config{const char* name;int heads,total,stages;bool skew;};
+#ifndef STREAM_CHAINS_KERNELS_ONLY
 int main(int argc,char** argv){
  if(argc!=4||!getenv("SLURM_JOB_ID")){fprintf(stderr,"usage: binary repeats reference_dir quick(0/1)\n");return 2;}
  int repeats=std::stoi(argv[1]);bool quick=std::stoi(argv[3]);if(repeats<4)return 2;
@@ -153,3 +154,5 @@ int main(int argc,char** argv){
  }
  for(int b=0;b<4;++b){HIP(hipEventDestroy(done[b]));HIP(hipStreamDestroy(streams[b]));}HIP(hipEventDestroy(ready));HIP(hipEventDestroy(start));HIP(hipEventDestroy(stop));
 }
+
+#endif

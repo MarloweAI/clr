@@ -336,29 +336,22 @@ class VirtualGPU : public device::VirtualDevice {
     const VirtualGPU& gpu_;                          //!< VirtualGPU, associated with this tracker
     std::vector<ProfilingSignal*> external_signals_;  //!< External signals for a wait in this queue
     std::vector<hsa_signal_t> waiting_signals_;       //!< Current waiting signals in this queue
-    std::vector<uint64_t> waiting_native_hints_;
     std::vector<uint64_t> waiting_native_queue_ids_;
-    std::vector<uint64_t> waiting_native_kernel_ends_;
-    bool waiting_breaks_dispatch_run_ = false;
+    std::vector<uint64_t> waiting_native_threshold_indices_;
+    bool waiting_breaks_native_history_ = false;
    public:
-    bool WaitingBreaksDispatchRun() const { return waiting_breaks_dispatch_run_; }
+    bool WaitingBreaksNativeHistory() const { return waiting_breaks_native_history_; }
     uint64_t NativeProducerQueueId(hsa_signal_t signal) const {
       for (size_t i = 0; i < waiting_signals_.size(); ++i) {
         if (waiting_signals_[i].handle == signal.handle) return waiting_native_queue_ids_[i];
       }
       return std::numeric_limits<uint64_t>::max();
     }
-    uint64_t NativeKernelEnd(hsa_signal_t signal) const {
+    uint64_t NativeThresholdIndex(hsa_signal_t signal) const {
       for (size_t i = 0; i < waiting_signals_.size(); ++i) {
-        if (waiting_signals_[i].handle == signal.handle) return waiting_native_kernel_ends_[i];
+        if (waiting_signals_[i].handle == signal.handle) return waiting_native_threshold_indices_[i];
       }
-      return 0;
-    }
-    uint64_t NativeDispatchHint(hsa_signal_t signal) const {
-      for (size_t i = 0; i < waiting_signals_.size(); ++i) {
-        if (waiting_signals_[i].handle == signal.handle) return waiting_native_hints_[i];
-      }
-      return 0;
+      return std::numeric_limits<uint64_t>::max();
     }
   };
 
@@ -647,22 +640,35 @@ class VirtualGPU : public device::VirtualDevice {
   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
   ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
   bool native_wait_enabled_ = false;
-  static uint64_t NextNativeProducerId();
-  const uint64_t native_producer_identity_ = GPU_NATIVE_EVENT_WAIT ? NextNativeProducerId() : 0;
-  uint64_t native_kernel_begin_ = 0;
-  uint64_t native_kernel_end_ = 0;
-  // Require a substantial unread dispatch prefix before attempting a native
-  // prewait. Short dependencies and drained prefixes use ordinary AQL.
+  // Require 256 actual unread kernel packets before adding a native prewait.
+  // Short dependencies and drained histories use ordinary AQL.
   static constexpr uint64_t kNativeWaitMinDispatches = 256;
+  // Keep positions, not packet-span length: markers and other streams' packets
+  // never count as kernels. A fresh read index at/before the oldest retained
+  // position proves that all 256 of this stream's kernels remain unread.
+  uint64_t native_kernel_positions_[kNativeWaitMinDispatches]{};
+  uint64_t native_history_queue_id_ = std::numeric_limits<uint64_t>::max();
+  unsigned native_history_head_ = 0;
+  unsigned native_history_count_ = 0;
+  uint64_t NativeThresholdIndex() const {
+    if (gpu_queue_ == nullptr || native_history_queue_id_ != gpu_queue_->id ||
+        native_history_count_ != kNativeWaitMinDispatches) {
+      return std::numeric_limits<uint64_t>::max();
+    }
+    return native_kernel_positions_[native_history_head_];
+  }
+  void BreakNativeKernelHistory() {
+    native_history_head_ = native_history_count_ = 0;
+  }
   void NoteNativeKernelPacket(uint64_t index) {
     if (!native_wait_enabled_) return;
-    // A gap can contain another stream's work or a non-kernel packet. Never
-    // count it as part of this producer's contiguous kernel prefix.
-    if (index != native_kernel_end_) native_kernel_begin_ = index;
-    native_kernel_end_ = index + 1;
-  }
-  void BreakNativeDispatchRun() {
-    native_kernel_begin_ = native_kernel_end_ = 0;
+    if (native_history_queue_id_ != gpu_queue_->id) {
+      native_history_queue_id_ = gpu_queue_->id;
+      native_history_head_ = native_history_count_ = 0;
+    }
+    native_kernel_positions_[native_history_head_] = index;
+    native_history_head_ = (native_history_head_ + 1) % kNativeWaitMinDispatches;
+    if (native_history_count_ < kNativeWaitMinDispatches) ++native_history_count_;
   }
   uint64_t native_wait_count_ = 0;
   uint64_t native_irq_wait_count_ = 0;
