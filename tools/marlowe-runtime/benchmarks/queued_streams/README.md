@@ -41,3 +41,5 @@ failed this queued-work test: balanced two-stream depth 16 changed from 3.174 to
 that admission in the first corrected prototype. See the release qualification
 report for exact final bytes and results; prototype measurements do not qualify a
 subsequent build.
+
+[Final v9 RC2 results](RESULTS.md) record the committed-source package checks.

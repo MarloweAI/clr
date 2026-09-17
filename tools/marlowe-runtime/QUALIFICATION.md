@@ -1,30 +1,91 @@
 # Release evidence and promotion status
 
-## V9 admission revision — final-byte qualification in progress
+## V9 RC2 — September 17, 2026
 
-The [policy](NATIVE_WAIT_POLICY.md) now retains 256 actual own-kernel positions
-across packet gaps, while ending that history at pending cross-queue dependencies,
-compute/SDMA transitions and explicit stream-memory/IPC waits. This replaces v8's
-contiguous suffix. The versioned overlay remains opt-in and not production-qualified.
+The committed runtime recovers retained-app C1 prefetch-off to **14.984 ms/token**
+(median of three trial means). The matched diagnostic v8 policy was 17.217 ms/token;
+changing admission alone in that diagnostic recovered 15.041 ms/token.
+The application, model, token tape and retained feature settings are unchanged.
 
-Matched C1-off diagnostics isolated the v8 regression to admission: 17.217 ms/token
-with v8 policy versus 15.041 ms with own-position history in identical HIP bytes.
-The first clean history build reproduced 15.020 ms, but a performance-only Claude
-Fable review identified a missing queued-attention regime. The new
-[holdout](benchmarks/queued_streams/README.md) reproduced a 3.174→5.941 ms regression
-when 16 short fork/join steps were queued before synchronization. That build is
-rejected for handoff despite passing the preceding screen.
+| Exact final package C1-off trial | Mean ms/token |
+|---|---:|
+| 1 | 14.978330 |
+| 2 | 14.984131 |
+| 3 | 42.320421 |
 
-The pending-dependency segment guard restores the prototype's queued two-stream
-time to 3.169 ms (off 3.166 ms) and removes native admissions in its queued-chain
-trace. One/two/three-consumer fanout still improves, including queue-cap-8 controls;
-a 5 ms delayed-consumer cell is neutral in total latency. These prototype results
-explain the policy revision; final packaged bytes need their own qualification.
+Trial 3 includes a 5.262-second token interval; all samples are retained. Per-trial
+interval medians are 14.891, 14.896 and 14.898 ms. These do not replace the complete
+trial means above. The long-gap investigation remains paused at the user's request;
+no cause is attributed. This release does not claim to solve serving latency tails.
 
-The current build and serving checks preserve the retained application, model and
-benchmark settings. Final release identity, results and handoff remain pending.
-C1-on, C4-off, C4-on, standard GLM on this revision and an operational canary are
-separate outstanding promotion evidence. No driver deployment is required.
+Implementation: `cab5670a350678f2b0a6feb388fcbbca56c426a1` in CLR. Recipe:
+`96b27db2b25c1f1975cfd1dee8b7f51754be93cc`. The package was built from clean committed
+CLR/HIP sources in the pinned image, with matching HSA bytes. HIP SHA-256:
+`43104e17679d8700f1d3f5a66160b63ba3cbd26fba2f46cab5802a58d4bb2115`. HSA SHA-256:
+`b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4`. Archive SHA-256:
+`0e372ee761f68a7e144e23d13fe40551ca88f08390cef5e8c32f27c81f0ca7eb`.
+
+| Final-byte qualification | Result |
+|---|---|
+| Fixed native-wait matrix on two physical GPUs, same node2 | 2 × 54 fresh processes; 2 × 14,958 measured operations; both screens passed |
+| Original pending-wait excess | 95.7–96.0% removed |
+| Queued attention / fragmented producer fanout | 36 processes, 5,904 rows; GPU and host headline screen passed |
+| LLM stream matrix | 60 processes, 40,320 timings, 88 complete workload cells; no repeatable >2% GPU or host total regression against any control |
+| Shared physical queue dispatch | 9 processes, 3,744 rows; screen passed |
+| PyTorch minimal/events/graphs, off/on and queue caps 1/4 | 8 processes, 1,280 rows passed |
+| Semantic checks | 12 processes passed |
+| Pool pressure, blocked callback, concurrent queue recycling | 3 checks passed with actual native admissions |
+| C1-off retained model | Six mapped processes; library and four-rank feature receipts audited |
+
+The declared screen flags a regression above 2% in every paired round, using three
+fresh-process rounds and retaining all samples. Passing this finite matrix does
+not establish equivalence, universal neutrality, model-answer quality or readiness
+for broad production use. Stock, disabled and enabled controls separate overlay changes from native-wait enablement. Component tradeoffs remain visible: fanout handoff grows
+while producer and total execution improve.
+
+### What Fable found and what changed
+
+Four read-only Claude Fable reviews covered correctness and performance. The
+performance review found that host-time admission could approve short fork/join
+waits queued far before GPU execution. The first history candidate recovered C1
+but regressed 16 queued balanced two-stream attention steps from 3.174 to 5.941 ms/step.
+That candidate was rejected. The [new holdout](benchmarks/queued_streams/README.md)
+preserves this counterexample.
+
+The final policy preserves 256 actual own-kernel indices across harmless packet
+gaps, and ends the history at pending cross-queue dependencies, engine changes,
+and explicit stream-memory/IPC waits. The final queued two-stream case is
+3.159 ms off / 3.165 ms on;
+four-stream is 3.839 ms off /
+3.837 ms on. The separate queued trace has zero native
+packets; fanout has 72. The follow-up review identified the explicit stream-memory
+wait reset, which is included. Conservative SDMA resets can still miss opportunities.
+
+Earlier shared-queue trials had a performance flag; closer interleaving across stock,
+v8 and the initial history candidate showed similar variability in every runtime.
+The failed run remains retained. No unsupported clock attribution is made. The
+canonical package's complete shared-queue screen passes.
+
+### Deployment and remaining scope
+
+Release `marlowe-hip-7.2.4-native-wait-v9-rc2` stays opt-in and
+`qualified_for_production=false`. Use the existing pinned SGLang ROCm 7.2.4/gfx950
+image plus the versioned overlay and restart workers with `GPU_NATIVE_EVENT_WAIT=1`
+under its `run` launcher. Flag 0 is the matched disabled control; the stock image is
+the third control. Restart with 0 to disable the policy, or remove the overlay to
+restore stock. There is no driver or firmware deployment.
+
+C1-on, C4-off and C4-on are handed to Benchmark combined optimizations for the
+unchanged four-case comparison. Standard GLM on these exact bytes, broader model
+correctness and an operational canary remain promotion work. Event forwarding
+through a third stream and short prefixes of very long kernels remain missed
+opportunities. Serving-gap investigation stays paused.
+
+Full raw runs, complete control tables, source/library hashes and review outputs
+are retained in `iterations/c1-runtime-recovery-20260917` on GCP and the same
+campaign directory on the cluster. [Compact exact-byte receipt](V9_RC2_RECEIPT.json)
+records the final artifact identity and observed gates. Prototype measurements do
+not substitute for the final-byte runs above.
 
 ## Historical selective v8 RC1 candidate — September 17, 2026
 
@@ -50,15 +111,15 @@ This finite screen does not establish universal neutrality or equivalence.
 | 45957 | 0000:15:00.0 | 5.2313 | 5.2244 | 3.2529 |
 
 Values are medians of three process medians; paired deltas are retained separately.
-The first allocation's balanced64 two/four-stream on times are 3.1484/3.6947ms,
-versus stock 3.1531/3.7103ms. The late384/four-tail case is approximately 0.618ms
+The first allocation's balanced64 two/four-stream on times are 3.1484/3.6947 ms,
+versus stock 3.1531/3.7103 ms. The late384/four-tail case is approximately 0.618 ms
 in all modes. The old large short-chain and late-wait regressions do not recur in
 these cases. An occupied-case fluctuation received two focused repeats, including
 original RC4-off: roughly 1% differences changed sign, and new-off matched old-off.
 All 5,664 supplementary observations remain available; they are not a claimed win.
 
 Exact-package PyTorch checks passed 960 operations (minimal pending wait
-5.2317ms stock versus 3.2144ms on). Twelve semantic processes passed. Native pool
+5.2317 ms stock versus 3.2144 ms on). Twelve semantic processes passed. Native pool
 pressure exercised 2,048 admissions, a buffer rotation and 252 nonblocking
 fallbacks with 2,300 pending waits and no watchdog. Blocked callbacks and concurrent
 eight-stream creation/recycling passed with actual native admissions. Four
@@ -89,7 +150,7 @@ and passed the exact-recipe, ordinary-gate and process-library audits:
 
 All 220 requests completed without errors; all 40 process receipts match the
 expected runtime libraries. At C1, on versus off changes throughput by +0.071%,
-ITL p50 by -0.081%, and TTFT p50 by +0.996% (about 1.3ms). On versus stock changes
+ITL p50 by -0.081%, and TTFT p50 by +0.996% (about 1.3 ms). On versus stock changes
 throughput by +0.265%, ITL p50 by -0.287%, and TTFT p50 by +0.631%. This first
 triplet is approximately neutral; one job per cell does not establish equivalence
 or a systematic small regression. C1 TTFT wave spread is 13–19%, and ordinary

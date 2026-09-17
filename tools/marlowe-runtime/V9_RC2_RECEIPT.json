@@ -1,0 +1,206 @@
+{
+  "package": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/canonical-work/dist/marlowe-hip-7.2.4-native-wait-v9-rc2",
+  "archive": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/canonical-work/dist/marlowe-hip-7.2.4-native-wait-v9-rc2.tar.gz",
+  "archive_sha256": "0e372ee761f68a7e144e23d13fe40551ca88f08390cef5e8c32f27c81f0ca7eb",
+  "hip_sha256": "43104e17679d8700f1d3f5a66160b63ba3cbd26fba2f46cab5802a58d4bb2115",
+  "hsa_sha256": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4",
+  "implementation_commit": "cab5670a350678f2b0a6feb388fcbbca56c426a1",
+  "recipe_commit": "96b27db2b25c1f1975cfd1dee8b7f51754be93cc",
+  "model": {
+    "label": "canonical-v9-rc2",
+    "hip_sha256": "43104e17679d8700f1d3f5a66160b63ba3cbd26fba2f46cab5802a58d4bb2115",
+    "trials": [
+      {
+        "path": "c1-investigation-j48764-recovery-canonical-01/release-c1-off-1/c1.json",
+        "tpot_ms": 14.978330265876139,
+        "steady_interval_median_ms": 14.891053549945354
+      },
+      {
+        "path": "c1-investigation-j48764-recovery-canonical-01/release-c1-off-2/c1.json",
+        "tpot_ms": 14.984130682326699,
+        "steady_interval_median_ms": 14.89572343416512
+      },
+      {
+        "path": "c1-investigation-j48764-recovery-canonical-01/release-c1-off-3/c1.json",
+        "tpot_ms": 42.32042089036744,
+        "steady_interval_median_ms": 14.898108085617423
+      }
+    ],
+    "median_trial_mean_ms": 14.984130682326699,
+    "maximum_interval_ms": 5262.4516321811825,
+    "pause_samples_excluded": false,
+    "gap_investigation": "remains paused at user request; no attribution made"
+  },
+  "screens": {
+    "final-screen-j48966": {
+      "job": "48966",
+      "node": "marlowe-mi355x-2",
+      "performance_screen_passed": true,
+      "improvement_gate_passed": true,
+      "processes": 54,
+      "wait_improvement": [
+        {
+          "round": 0,
+          "control": "stock",
+          "baseline_overhead_us": 2094.0305000000003,
+          "on_overhead_us": 89.32450000000063,
+          "passed": true
+        },
+        {
+          "round": 0,
+          "control": "off",
+          "baseline_overhead_us": 2101.1404999999995,
+          "on_overhead_us": 89.32450000000063,
+          "passed": true
+        },
+        {
+          "round": 1,
+          "control": "stock",
+          "baseline_overhead_us": 2098.648,
+          "on_overhead_us": 84.87350000000015,
+          "passed": true
+        },
+        {
+          "round": 1,
+          "control": "off",
+          "baseline_overhead_us": 2074.8120000000004,
+          "on_overhead_us": 84.87350000000015,
+          "passed": true
+        },
+        {
+          "round": 2,
+          "control": "stock",
+          "baseline_overhead_us": 2102.682499999999,
+          "on_overhead_us": 86.28600000000006,
+          "passed": true
+        },
+        {
+          "round": 2,
+          "control": "off",
+          "baseline_overhead_us": 2085.359,
+          "on_overhead_us": 86.28600000000006,
+          "passed": true
+        }
+      ]
+    },
+    "final-screen-j48764": {
+      "job": "48764",
+      "node": "marlowe-mi355x-2",
+      "performance_screen_passed": true,
+      "improvement_gate_passed": true,
+      "processes": 54,
+      "wait_improvement": [
+        {
+          "round": 0,
+          "control": "stock",
+          "baseline_overhead_us": 2069.7855,
+          "on_overhead_us": 88.18200000000024,
+          "passed": true
+        },
+        {
+          "round": 0,
+          "control": "off",
+          "baseline_overhead_us": 2095.1275,
+          "on_overhead_us": 88.18200000000024,
+          "passed": true
+        },
+        {
+          "round": 1,
+          "control": "stock",
+          "baseline_overhead_us": 2090.0699999999997,
+          "on_overhead_us": 88.1255000000001,
+          "passed": true
+        },
+        {
+          "round": 1,
+          "control": "off",
+          "baseline_overhead_us": 2098.5434999999998,
+          "on_overhead_us": 88.1255000000001,
+          "passed": true
+        },
+        {
+          "round": 2,
+          "control": "stock",
+          "baseline_overhead_us": 2096.0330000000004,
+          "on_overhead_us": 88.74249999999984,
+          "passed": true
+        },
+        {
+          "round": 2,
+          "control": "off",
+          "baseline_overhead_us": 2087.049,
+          "on_overhead_us": 88.74249999999984,
+          "passed": true
+        }
+      ]
+    },
+    "final-queuecap1-j48966": {
+      "job": "48966",
+      "node": "marlowe-mi355x-2",
+      "performance_screen_passed": true,
+      "improvement_gate_passed": null,
+      "processes": 9,
+      "wait_improvement": []
+    }
+  },
+  "queued_performance_screen_passed": true,
+  "llm": {
+    "processes": 60,
+    "rows": 40320,
+    "total_cells": 88,
+    "repeatable_gpu_regressions": [],
+    "repeatable_host_regressions": []
+  },
+  "framework_rows": 1280,
+  "semantic_processes": 12,
+  "standalone": [
+    {
+      "name": "eligible_pool_pressure",
+      "returncode": 0,
+      "native_packets": 2048,
+      "source_sha256": "a3966ab945e5953b3fadd8523bfb072231981a532629865bc05c18effaf13332"
+    },
+    {
+      "name": "callback_dispatch_prefix",
+      "returncode": 0,
+      "native_packets": 16,
+      "source_sha256": "22b3aff3a7a1f0a890888cbf61ec64b2c6903e4257418e1ef4aba3a03495638a"
+    },
+    {
+      "name": "queue_churn",
+      "returncode": 0,
+      "native_packets": 128,
+      "source_sha256": "772747c07cae0ac243b9929bf9fb2c03cc45253e74e9b63c060e801d21e3da78"
+    }
+  ],
+  "final_summary_sha256": "6955aff12133ec914fc881e22ada4eae2c0166e1061f90653f59bf4e870c5801",
+  "reviews": {
+    "fable-performance-review.json": "42104a446e8773e003d5dd5d50f203decddaae61941ab8d0c6c51c4f899872f8",
+    "fable-release-review.json": "a9dd864b5a40e1eacbf1d8bd439e2a27b25b5a3044a993de0ee0fac2dca44275",
+    "fable-history-review.json": "3b53df284a80b90d9fa2c2eced2aa68d7fac8f2a5f9fa6b4d45cdee395151f9d",
+    "fable-segment-review.json": "839e569d241684be80021576c6503f688184363ed1bd8a7e4c764065ddaad76e"
+  },
+  "production_qualified": false,
+  "relocation": {
+    "off": {
+      "mapped": {
+        "libamdhip64.so": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/relocated-v9-rc2/marlowe-hip-7.2.4-native-wait-v9-rc2/lib/libamdhip64.so.7.2.53211-cab5670",
+        "libhsa-runtime64.so": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/relocated-v9-rc2/marlowe-hip-7.2.4-native-wait-v9-rc2/lib/libhsa-runtime64.so.1.18.70204"
+      },
+      "hip_runtime": 70253211,
+      "torch": "2.11.0+rocm7.2",
+      "enabled": "0",
+      "gpu_count": 1
+    },
+    "on": {
+      "mapped": {
+        "libamdhip64.so": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/relocated-v9-rc2/marlowe-hip-7.2.4-native-wait-v9-rc2/lib/libamdhip64.so.7.2.53211-cab5670",
+        "libhsa-runtime64.so": "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/relocated-v9-rc2/marlowe-hip-7.2.4-native-wait-v9-rc2/lib/libhsa-runtime64.so.1.18.70204"
+      },
+      "hip_runtime": 70253211,
+      "torch": "2.11.0+rocm7.2",
+      "enabled": "1",
+      "gpu_count": 1
+    }
+  }
+}
