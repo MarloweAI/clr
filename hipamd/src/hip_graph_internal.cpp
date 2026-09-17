@@ -928,7 +928,17 @@ hipError_t GraphExec::Init() {
     // the number of extra streams to create
     for (auto const& [dev_id, num_streams] : max_streams_dev_) {
       if (num_streams > 0) {
-        status = CreateStreams(num_streams, dev_id);
+        // Queue pooling can assign one candidate the same hardware queue as
+        // the launch stream. Give UpdateStreams a bounded spare so it can
+        // select independent queues before using its collision fallback.
+        const bool add_spare = use_segment_scheduling_ && dev_id == instantiateDeviceId_ &&
+                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES;
+        status = CreateStreams(num_streams + (add_spare ? 1u : 0u), dev_id);
+        if (status == hipErrorOutOfMemory && add_spare) {
+          // The spare is optional. CreateStreams cleans up on failure, so
+          // retry the required count before rejecting an otherwise valid graph.
+          status = CreateStreams(num_streams, dev_id);
+        }
         if (status != hipSuccess) {
           return status;
         }
