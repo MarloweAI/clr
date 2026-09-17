@@ -50,12 +50,37 @@ manifests, source hashes, review text and the full report are retained under the
 campaign's `iterations/native-wait-neutral-20260917` directory; these development
 artifacts are not substituted for production evidence.
 
-The unchanged standard GLM stock/off/on C1/C4/C16 matrix is now running on node2,
-with one eight-GPU job per arm and a 900-second measurement target. The first arm
-is stock C1, job45964. No v8 full-model result or operational canary is claimed yet.
-Historical RC4 results below do not qualify v8. Configured profiler proxy queues
-can suppress admission, and those altered runs are not evidence for the unprofiled
-speedup. Serving-gap investigation remains stopped at the user's request.
+The unchanged standard GLM stock/off/on C1/C4/C16 matrix uses node2, one eight-GPU
+job per arm and a 900-second measurement target. Four of nine arms have completed
+and passed the exact-recipe, ordinary-gate and process-library audits:
+
+| Concurrency | Runtime | Job | Requests | Output tok/s | ITL p50 ms | TTFT p50 ms |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 1 | Stock | 45964 | 32 | 83.90 | 11.7871 | 131.05 |
+| 1 | Candidate off | 46052 | 32 | 84.07 | 11.7628 | 130.57 |
+| 1 | Candidate on | 46128 | 32 | 84.13 | 11.7533 | 131.87 |
+| 4 | Stock | 46237 | 124 | 317.10 | 12.3606 | 250.97 |
+
+All 220 requests completed without errors; all 40 process receipts match the
+expected runtime libraries. At C1, on versus off changes throughput by +0.071%,
+ITL p50 by -0.081%, and TTFT p50 by +0.996% (about 1.3ms). On versus stock changes
+throughput by +0.265%, ITL p50 by -0.287%, and TTFT p50 by +0.631%. This first
+triplet is approximately neutral; one job per cell does not establish equivalence
+or a systematic small regression. C1 TTFT wave spread is 13–19%, and ordinary
+first-wave warmup notes are retained. The C4 stock gate reports steady decode
+with prefill-related throughput/TTFT variability. Metrics use Marlowe's unchanged
+reducer; these reported percentiles are not a separate global serving-tail study.
+
+Off C4 job46323 is queued on node2; on C4 and all three C16 arms remain outstanding.
+The collector for on C1 required a transport recovery: all 121 copied files matched
+remote SHA-256 hashes before the stalled SSH child was released. The original GPU
+run and benchmark outputs were preserved. No runtime or benchmark change resulted.
+
+Full v8 qualification and an operational canary remain outstanding before broad
+enablement. Historical RC4 results below do not qualify v8. Configured profiler
+proxy queues can suppress admission, and those altered runs are not evidence for
+the unprofiled speedup. Serving-gap investigation remains stopped at the user's
+request.
 
 ## Historical RC4 candidate
 
