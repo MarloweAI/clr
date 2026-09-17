@@ -1,6 +1,63 @@
 # Release evidence and promotion status
 
-## Current RC4 candidate
+## Selective v8 RC1 candidate — September 17, 2026
+
+The [selective policy](NATIVE_WAIT_POLICY.md) is implemented at
+`77c75b8fa248f0dfc228df9a386289f868a247c2`; recipe commit
+`963befb0f20271aecb63793c3b9eea8ab07ee35e` built the tested package from that pin.
+Archive SHA-256:
+`91d22e46ba481abbfa737adc91c215e7d4c6bf1359978ee7e585c201d8cb088c`.
+The package remains opt-in and `qualified_for_production=false`.
+
+The exact package passed the [fixed regression suite](benchmarks/native_wait_policy/README.md)
+on two independent single-GPU allocations on node2, using different physical GPUs.
+Each suite contains 14,958 measured operations in 54 fresh processes. Another 3,744
+shared-queue operations passed. Every sample is retained; stock/off/on mappings
+are verified per process. Both full runs passed the declared regression screen
+and removed at least half the original excess wait time in every paired round.
+Observed excess wait-time removal was about 96%, or about 38% lower total latency.
+This finite screen does not establish universal neutrality or equivalence.
+
+| Allocation | PCI bus | Pending graph stock ms | Off ms | On ms |
+| --- | --- | ---: | ---: | ---: |
+| 45710 | 0000:05:00.0 | 5.2292 | 5.2325 | 3.2214 |
+| 45957 | 0000:15:00.0 | 5.2313 | 5.2244 | 3.2529 |
+
+Values are medians of three process medians; paired deltas are retained separately.
+The first allocation's balanced64 two/four-stream on times are 3.1484/3.6947ms,
+versus stock 3.1531/3.7103ms. The late384/four-tail case is approximately 0.618ms
+in all modes. The old large short-chain and late-wait regressions do not recur in
+these cases. An occupied-case fluctuation received two focused repeats, including
+original RC4-off: roughly 1% differences changed sign, and new-off matched old-off.
+All 5,664 supplementary observations remain available; they are not a claimed win.
+
+Exact-package PyTorch checks passed 960 operations (minimal pending wait
+5.2317ms stock versus 3.2144ms on). Twelve semantic processes passed. Native pool
+pressure exercised 2,048 admissions, a buffer rotation and 252 nonblocking
+fallbacks with 2,300 pending waits and no watchdog. Blocked callbacks and concurrent
+eight-stream creation/recycling passed with actual native admissions. Four
+read-only Claude Fable reviews examined lifetime, queue accounting and coverage.
+
+Diagnostic traces confirm that late waits find only 6–70 remaining packets and
+skip the prewait, while the original pending case finds about 2,040 and admits it.
+On eligible long prefixes, handoff gaps still increase about 15–35us, while total
+latency decreases 35–38% because producer interference falls much more. Component
+tradeoffs and pending fractions are reported explicitly, not hidden by an aggregate.
+
+The launcher passed off/on verification; a relocated archive passed verification
+and the second full suite. Both microbenchmark allocations are released. Raw CSVs,
+manifests, source hashes, review text and the full report are retained under the
+campaign's `iterations/native-wait-neutral-20260917` directory; these development
+artifacts are not substituted for production evidence.
+
+The unchanged standard GLM stock/off/on C1/C4/C16 matrix is now running on node2,
+with one eight-GPU job per arm and a 900-second measurement target. The first arm
+is stock C1, job45964. No v8 full-model result or operational canary is claimed yet.
+Historical RC4 results below do not qualify v8. Configured profiler proxy queues
+can suppress admission, and those altered runs are not evidence for the unprofiled
+speedup. Serving-gap investigation remains stopped at the user's request.
+
+## Historical RC4 candidate
 
 ### Partial overlap and two/four-stream continuation
 
