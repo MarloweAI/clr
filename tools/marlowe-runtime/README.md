@@ -4,6 +4,11 @@ Build and package the gfx950 event-wait backport as a userspace HIP/HSA overlay.
 The package is independent of SGLang and HiSparse and uses unchanged HIP/PyTorch
 APIs. This release candidate is opt-in and is not yet production-qualified.
 
+The current implementation uses a [selective native-wait policy](NATIVE_WAIT_POLICY.md)
+to avoid the short-chain and late-wait regressions of unconditional prewaits.
+The source lock below identifies the packaged release; development benchmark
+results do not qualify different packaged bytes.
+
 [Qualification evidence and open promotion gates](QUALIFICATION.md) distinguish
 the PyTorch wait result, isolated runtime toggle tests and stock-image comparisons.
 

@@ -88,6 +88,13 @@ class ProfilingSignal : public amd::ReferenceCountedObject {
   } Flags;
 
   Flags flags_;
+  // Immutable for each retained signal generation; advisory scheduling only.
+  // Advisory metadata for this retained signal generation. No queue/object
+  // pointer escapes; a consumer rechecks queue progress under the device lock.
+  std::atomic<uint64_t> native_dispatch_hint_{0};
+  std::atomic<uint64_t> native_kernel_end_{0};
+  std::atomic<uint64_t> native_producer_id_{0};
+  std::atomic<uint64_t> native_producer_queue_id_{std::numeric_limits<uint64_t>::max()};
 
   //! Cached timing data - populated when signal completes, avoids repeated HSA calls
   struct CachedTiming {
@@ -624,6 +631,10 @@ class Device : public NullDevice {
 
   // Returns the number of allocated normal queues on this device
   uint32_t NumNormalQueues() const { return num_normal_queues_.load(); }
+
+  // Advisory only: no pointer escapes the queue lifetime lock. Unknown queues,
+  // lock contention, or an unusually large pool select ordinary AQL waiting.
+  bool TryNativeQueueReadIndex(uint64_t queue_id, uint64_t* read_index);
 
  private:
   bool create();

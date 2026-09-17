@@ -336,6 +336,30 @@ class VirtualGPU : public device::VirtualDevice {
     const VirtualGPU& gpu_;                          //!< VirtualGPU, associated with this tracker
     std::vector<ProfilingSignal*> external_signals_;  //!< External signals for a wait in this queue
     std::vector<hsa_signal_t> waiting_signals_;       //!< Current waiting signals in this queue
+    std::vector<uint64_t> waiting_native_hints_;
+    std::vector<uint64_t> waiting_native_queue_ids_;
+    std::vector<uint64_t> waiting_native_kernel_ends_;
+    bool waiting_breaks_dispatch_run_ = false;
+   public:
+    bool WaitingBreaksDispatchRun() const { return waiting_breaks_dispatch_run_; }
+    uint64_t NativeProducerQueueId(hsa_signal_t signal) const {
+      for (size_t i = 0; i < waiting_signals_.size(); ++i) {
+        if (waiting_signals_[i].handle == signal.handle) return waiting_native_queue_ids_[i];
+      }
+      return std::numeric_limits<uint64_t>::max();
+    }
+    uint64_t NativeKernelEnd(hsa_signal_t signal) const {
+      for (size_t i = 0; i < waiting_signals_.size(); ++i) {
+        if (waiting_signals_[i].handle == signal.handle) return waiting_native_kernel_ends_[i];
+      }
+      return 0;
+    }
+    uint64_t NativeDispatchHint(hsa_signal_t signal) const {
+      for (size_t i = 0; i < waiting_signals_.size(); ++i) {
+        if (waiting_signals_[i].handle == signal.handle) return waiting_native_hints_[i];
+      }
+      return 0;
+    }
   };
 
   VirtualGPU(Device& device, bool profiling = false, bool cooperative = false,
@@ -623,6 +647,23 @@ class VirtualGPU : public device::VirtualDevice {
   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
   ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
   bool native_wait_enabled_ = false;
+  static uint64_t NextNativeProducerId();
+  const uint64_t native_producer_identity_ = GPU_NATIVE_EVENT_WAIT ? NextNativeProducerId() : 0;
+  uint64_t native_kernel_begin_ = 0;
+  uint64_t native_kernel_end_ = 0;
+  // Require a substantial unread dispatch prefix before attempting a native
+  // prewait. Short dependencies and drained prefixes use ordinary AQL.
+  static constexpr uint64_t kNativeWaitMinDispatches = 256;
+  void NoteNativeKernelPacket(uint64_t index) {
+    if (!native_wait_enabled_) return;
+    // A gap can contain another stream's work or a non-kernel packet. Never
+    // count it as part of this producer's contiguous kernel prefix.
+    if (index != native_kernel_end_) native_kernel_begin_ = index;
+    native_kernel_end_ = index + 1;
+  }
+  void BreakNativeDispatchRun() {
+    native_kernel_begin_ = native_kernel_end_ = 0;
+  }
   uint64_t native_wait_count_ = 0;
   uint64_t native_irq_wait_count_ = 0;
   uint64_t native_pool_fallback_count_ = 0;
