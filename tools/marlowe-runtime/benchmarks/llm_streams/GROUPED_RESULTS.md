@@ -327,3 +327,57 @@ was canceled at startup after this was verified.
 Artifacts: `model-interaction-j49875-{l0b0,l0b1,l1b0,l1b1}`,
 `model-interaction-j49875-audit.json`, `audit_interaction_model.py`, and
 `model-interaction-parser-fix` under the C1 prefetch investigation directory.
+
+
+## Isolated side-stream prewait selection (49954)
+
+A new diagnostic adds a default-false `GPU_GRAPH_DIAGNOSTIC_SIDEWAIT` control
+on top of the ordering/admission diagnostic. It suppresses optional native
+prewaits on interior graph markers whose consumer is the launch stream.
+Side-stream consumers and the final graph join retain prewaits. Original AQL
+dependencies and completion markers remain. A separate marker allowance
+preserves producer-history tracking. Classification uses logical streams,
+not a measurement of distinct physical queues.
+
+Job 49954 completed 0:0 on one GPU on node2. All 45 processes and 13,680
+uninstrumented timing rows passed correctness, control and mapped-library
+audits. Two separate trace passes each validated 48 correctness rows and
+both consumer classes. Native packet counts over the full traced workload
+were 6,160 with all prewaits and 5,487 with side selection; these are not
+per-model or timing measurements. New HIP SHA-256:
+`7485acfbe16290290b564ce175d4fd2d8db3b6d9f516633de66ff8e09e927486`.
+HSA is unchanged. Each matrix rotates five modes over three process rounds:
+stock, guarded new build, old combined diagnostic, new build with all waits,
+and identical new bytes with side selection. Ordering remains enabled.
+
+Captured expert graphs, median of three process medians, microseconds:
+
+| Case | All prewaits, bypass | Side selection, bypass | Guard retained |
+|---|---:|---:|---:|
+| Balanced b16, four streams | 191.446 | 160.605 | 151.125 |
+| Balanced b64, four streams | 139.105 | 105.663 | 95.383 |
+| Skewed b64, four streams | 188.106 | 173.806 | 161.645 |
+
+Side selection improves each of these cases in all three rounds, isolating
+substantial cost from optional main-stream interior prewaits. Balanced b64
+saves 33.00/33.08/33.68 us per round. However, the side-selected cases still
+regress 6.27%/10.78%/7.52% against guarded admission respectively.
+
+For 25-kernel grouped-prefetch graphs, side selection improves the 32/64-layer
+medians by 0.79%/0.76% relative to all prewaits, but per-round savings have
+mixed signs: 83.32/-37.38/208.25 us and -88.72/171.99/414.28 us. This is not
+robust evidence of an additional C1 model gain. New-build versus old combined
+baseline differences for those cases are -0.02%/-0.14%; the eight-layer case
+has a larger -1.36% rebuild difference. Four-kernel grouped-prefetch graphs
+still regress 6.62%/6.31% against guarded admission at 32/64 layers.
+
+This policy reduces some regressions but does not eliminate them. It also
+cannot repair non-graph queued-wait regressions by construction. A narrow C1
+comparison was requested with old combined bytes, new bytes/selection off,
+and identical new bytes/selection on to separate rebuild and policy effects.
+No model result for this selection is claimed yet; the package remains
+explicitly unqualified for production.
+
+Artifacts: `side-policy-{s1,s22,experts,controls}-j49954`,
+`side-policy-j49954-audit.json`, `audit_side_policy_micro.py`, and
+`side-policy-diagnostic.patch` under the C1 prefetch investigation directory.
