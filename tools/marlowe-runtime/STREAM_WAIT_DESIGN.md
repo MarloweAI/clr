@@ -3,14 +3,20 @@
 Current status, 2026-09-18: **no production package is qualified**. The new minimal
 [fused RC1 candidate](benchmarks/graph_completion/FUSED_RC1_CHECKS.md) passes 120
 single-GPU correctness processes and two two-device checks, including PyTorch.
-Its exact-byte broad performance bridge is next. The earlier minimal RC2 removed
-96.016% of waiter excess but failed the unchanged microbenchmark screens.
+Its [broad performance bridge](benchmarks/dispatch_cost/FUSED_RC1_PERFORMANCE.md)
+removes95.772% of waiter excess but fails the original stock screens. Two >2%
+new-versus-prior losses do not repeat above2% in one unchanged confirmation;
+the two-stream expert stock loss persists at3.29%. Both allocations are retained
+separately. The earlier minimal RC2 removed96.016% of waiter excess but also
+failed the unchanged microbenchmark screens.
 The best measured architectural
 improvement is [fused first-batch entry](benchmarks/dispatch_cost/ENTRY_FUSED_RESULTS.md):
 it retains95.83% waiter excess removal and improves small KV by1.20% and balanced
 four-stream experts by2.37–3.15% relative to same-byte lazy markers. However,
 two-stream experts still lose3.42% to stock, and four expert targets lose4.37–5.83%
-to historical d3. The final corrected-byte HiSparse bridge remains held.
+to historical d3. Final qualification remains held. A diagnostic corrected-byte
+C1 on/off ABBA bridge is now running as52268; it measures package preservation
+against historical d3 and cannot waive the microbenchmark failures.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.

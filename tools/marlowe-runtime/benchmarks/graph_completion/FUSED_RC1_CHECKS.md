@@ -1,6 +1,6 @@
 # Minimal fused-entry candidate: correctness — job 52193
 
-**The minimal candidate passes the tested HIP/PyTorch correctness suite. Performance and production qualification remain open.** This build removes the entry experiment controls from the earlier fused51980 implementation. No claim about its new-byte waiter, broad microbenchmark or HiSparse performance is made yet.
+**The minimal candidate passes the tested HIP/PyTorch correctness suite. Production qualification remains open.** This build removes the entry experiment controls from the earlier fused51980 implementation. Subsequent [performance evidence](../dispatch_cost/FUSED_RC1_PERFORMANCE.md) retains95.772% waiter-excess removal but fails the original stock screens; this document describes correctness only.
 
 Package: `marlowe-hip-7.2.4-fused-rc1`.
 
@@ -30,6 +30,6 @@ Additional process checks cover threaded event/queue reuse, native instruction-p
 
 Fault injection is deliberately absent from these release-shaped bytes. Earlier51980 fault tests and preserved source structure support the error path, but are not presented as an exact-byte injected-failure test. The suite also does not establish arbitrary nested multi-device graph correctness.
 
-Next is the unchanged broad microbenchmark matrix on these exact bytes, with immutable51980 and installed-stock controls and both native/placement flags off. Preserve all original stock screens and the >=95% waiter-excess-removal target. If the known two-stream stock failure persists, it remains a reported failure. A later HiSparse comparison may gather diagnostic evidence under the revised plan; it cannot qualify deployment or erase a failed screen.
+The subsequent unchanged broad matrix52217 and bounded confirmation52255 use these exact bytes, immutable51980 and installed-stock controls, including both native/placement flags off. The >=95% waiter target passes and the two-stream stock failure persists. A HiSparse comparison may gather diagnostic evidence under the revised plan; it cannot qualify deployment or erase a failed screen.
 
 Local package: `/home/sashawork/dev/amd-runtime-production/iterations/stream-wait-calibration-20260918/marlowe-hip-7.2.4-fused-rc1`. Raw roots: `fused-production-checks-j52193` and `fused-invalidation-j52193` in the same iteration directory, mirrored under `/workspace/home/sasha/amd-runtime-production/iterations/stream-wait-calibration-20260918`. External audit records are authoritative for completed checks; the immutable package retains its unqualified build manifest.
