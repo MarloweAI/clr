@@ -1,5 +1,7 @@
 # Hassan's Q/K scheduling workload
 
+[Stock-only mechanism diagnostics](STOCK_MECHANISM_RESULTS.md) found that this historical extraction captures two lazy split-K buffer fills on a fresh capture stream. Hassan's serving source warms the actual capture stream first. The prewarmed diagnostic removes this artifact, but stock two-stream execution still loses to serial. The [calibrated warm timeline](WARM_TIMELINE_RESULTS.md) shows useful overlap canceled by a larger interval before the next pair. Historical gates below retain their original protocol; do not transfer their absolute times or runtime wins to a prewarmed graph without a matched comparison.
+
 Single-GPU microbenchmark extracted from [Hassan's reproducer](https://github.com/MarloweAI/native-runtime-four-arm-reproducer/tree/b8a96bb4d842f628142e417ebb6753d4492bcaff).
 It reuses the exact 91-line scheduler and existing AITER/FlyDSL GEMMs. No GPU compute kernel is modified.
 The original repository measures TP8 L10 serving cadence; this extraction measures the projection pair only.
