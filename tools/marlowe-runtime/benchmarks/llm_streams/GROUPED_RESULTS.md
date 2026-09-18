@@ -375,9 +375,38 @@ This policy reduces some regressions but does not eliminate them. It also
 cannot repair non-graph queued-wait regressions by construction. A narrow C1
 comparison was requested with old combined bytes, new bytes/selection off,
 and identical new bytes/selection on to separate rebuild and policy effects.
-No model result for this selection is claimed yet; the package remains
+The completed model comparison is reported below; the package remains
 explicitly unqualified for production.
 
 Artifacts: `side-policy-{s1,s22,experts,controls}-j49954`,
 `side-policy-j49954-audit.json`, `audit_side_policy_micro.py`, and
 `side-policy-diagnostic.patch` under the C1 prefetch investigation directory.
+
+
+## Matched C1 side-policy attribution (job 49988)
+
+Node2, one TP4 allocation, C1 prefetch on, retained application e4b3fe5,
+inputs/protocol/CPU affinity unchanged. Native wait, long-path ordering and
+admission bypass enabled; trace disabled. Three retained trials per cohort.
+
+| Cohort | Median ms/token |
+|---|---:|
+| Previous interaction diagnostic, side selection off | 15.322281 |
+| New side-policy bytes, selection off | 15.290326 |
+| Identical new bytes, selection on | 15.113214 |
+
+The rebuild control differs by -0.031956 ms/token. Same-byte side selection
+saves 0.177112 ms/token (1.16%). Both investigators independently audited all
+nine trials, six distinct startup identities and matching post-timing mapped
+library identities per cohort, exact HIP/HSA hashes and actual controls.
+All trials were retained. The new HIP hash is the 7485acf build above.
+
+The remaining difference from historical c82 marker2 (14.897670 ms/token)
+is 0.215543 ms/token. Historical marker omission saved 0.200880 ms/token,
+but that is a separate cohort/runtime and does not establish its effect on
+this baseline. No additive attribution of that residual is claimed.
+The microbenchmark regressions above still prevent production qualification.
+
+Evidence: `model-side-policy-j49988-audit.json`, `audit_side_policy_model.py`,
+`SIDE_POLICY_MODEL_RESULTS.md` in the C1 prefetch investigation; independent
+report `/home/sashawork/dev/v9-side-policy-20260918/RESULTS.md`.
