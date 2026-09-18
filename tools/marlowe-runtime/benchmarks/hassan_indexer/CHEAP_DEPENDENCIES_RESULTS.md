@@ -25,10 +25,10 @@ Small-graph companion result (54155, one pair per graph, automatic scheduler): s
 
 The GPU-polling control 54181 gives a complementary result: at identical split-Q/K graph boundaries, events 30.263145 versus GPU polling 20.992790 µs (-30.63%); the same stream-memory API using CP waits takes 31.385779 µs. Polling still loses to split serial 18.464658 and unsplit two-stream 14.254271. Preserve the unified graph while investigating wait/completion packets; simply splitting it is not the solution for this extracted case.
 
-Next candidates, not yet implemented or qualified:
+Next candidates, not yet integrated into this candidate or qualified on Hassan:
 
 1. Publish segment completion on the final real kernel packet instead of a separate retirement packet, preserving full-prefix completion, signal generation ownership, scopes and failed-prefix handling. An error/lifetime review is necessary before replacing the existing retirement mechanism.
-2. Isolate graph-entry acquire and release scopes using actual packet-header receipts. The current entry helper calls addSystemScope(), which can strengthen both scopes; check the original captured header first. Do not narrow a required scope or infer a gain from the source alone.
+2. Isolate graph-entry acquire and release scopes using actual packet-header receipts. The current entry helper calls addSystemScope(), which can strengthen both scopes; check the original captured header first. Do not narrow a required scope or infer a gain from the source alone. A previous [scope discriminator](../dispatch_cost/ENTRY_SCOPE_RESULTS.md) (52028) already tested SYSTEM-acquire/AGENT-release on expert/KV graphs and found no material gain; reuse that implementation and evidence instead of treating this as a new general explanation. Hassan was not in that cohort, so this is a lower-priority, bounded check.
 3. Evaluate a GPU compute prewait against the existing retained producer completion signal, keeping the original full-width AQL dependency/fences. This could avoid split-graph and write-value API costs. It needs queue-alias, CU-resource/progress, signal lifetime and nonrecursive packet-construction checks; the explicit stock polling workaround does not establish an automatically safe runtime substitution.
 
 No new heuristic based on Hassan's kernel names, shapes, splitK or observed duration is proposed. Broad microbenchmark holdouts follow a candidate that actually improves Hassan; no broad default promotion or production claim is made here.
