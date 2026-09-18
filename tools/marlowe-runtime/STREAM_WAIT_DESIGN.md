@@ -34,7 +34,12 @@ explanation. The subsequent [same-byte spare probe](benchmarks/dispatch_cost/QUE
 recovers those grouped losses (-2.08/-2.23%) by removing the spare, but regresses
 four-stream experts by20–51%. Actual used physical queues change2→3 for grouped
 and3→4 for four-stream experts. Global removal is rejected: allocation and
-placement need a joint policy. The two-stream expert penalty is unchanged.
+placement need a joint policy. The two-stream expert penalty is unchanged. The
+[same-byte interaction grid](benchmarks/dispatch_cost/QUEUE_PLACEMENT_RESULTS.md)
+confirms placement with the spare reduces grouped L32/L64 by1.31/1.07% and keeps
+the four-stream expert gains. Placement/S1 has zero >2% GPU/host regressions
+across76cells, but L64 submission loses5.59%; no contemporaneous stock arm was
+included in that grid. A conservative qualified-spare boundary is under review.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
