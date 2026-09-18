@@ -1,6 +1,6 @@
 # First-batch graph-entry dependency — job 51980
 
-**Useful architectural improvement, still not qualified.** Fusing the entry dependency into the first captured root batch improves four of the five preselected targets relative to the same build’s lazy ordinary marker. No aggregate cell loses more than 2% in either fused/lazy or fused/eager comparison. The two-stream expert case remains 3.421% slower than stock, and four expert targets remain 4.37–5.83% slower than historical d3. Keep the final HiSparse bridge held.
+**Useful architectural improvement, still not qualified.** Fusing the entry dependency into the first captured root batch improves four of the five preselected targets relative to the same build’s lazy ordinary marker. No aggregate cell loses more than 2% in GPU or host elapsed time in either fused/lazy or fused/eager comparison. Submission time has 18 fused/lazy and 22 fused/eager cells above 2%; those measurements remain retained. The two-stream expert case remains 3.421% slower than stock, and four expert targets remain 4.37–5.83% slower than historical d3. Keep the final HiSparse bridge held.
 
 One node2 GPU, root-owned standalone launch, wait and validation; Slurm 0:0. All 216 ordinary correctness processes, 24 injected-failure processes, six untimed dependency proofs and 180 timing processes passed. All 69,408 timing rows across 229 cells are retained. Six balanced Williams orders cover stock, immutable RC2, historical d3, and three modes of one new build. The local raw/library mirror independently passes the same audit.
 

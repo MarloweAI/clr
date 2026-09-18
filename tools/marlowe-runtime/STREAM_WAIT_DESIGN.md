@@ -49,7 +49,7 @@ short pending dependencies still require cost admission.
 The subsequent [first-batch dependency diagnostic](benchmarks/dispatch_cost/ENTRY_FUSED_RESULTS.md)
 passed 240 correctness/failure checks and all dependency proofs. Against same-byte
 lazy markers it improves small KV by1.20%, small four-stream experts by2.37%,
-and large four-stream experts by3.15%, with no aggregate >2% loss anywhere.
+and large four-stream experts by3.15%, with no aggregate >2% GPU/host elapsed-time loss.
 Waiter overhead removal remains95.83%. This is a useful architectural direction,
 but the two-stream expert case still loses3.42% to stock and four expert targets
 lose4.37–5.83% to historical d3. Source/package qualification and the model bridge
@@ -149,7 +149,7 @@ shader or infer firmware behavior from timings alone.
 | Shared entry CPU retirement | Five target effects range from -0.51% to +0.08% | Do not select |
 | Kernel-only entry release deferral | No target reaches 2% gain; stock losses remain, waiter removal 95.86% | Do not select |
 | Graph-entry native cost override | 14 same-byte losses >2%; b16/two-stream expert +15.91%; sealed controls neutral | Reject |
-| First-batch dependency integration | No >2% same-byte loss; KV -1.20%, balanced four-stream experts -2.37/-3.15%; residual stock/d3 losses remain | Retain as useful diagnostic; insufficient |
+| First-batch dependency integration | No >2% same-byte GPU/host elapsed loss; KV -1.20%, balanced four-stream experts -2.37/-3.15%; residual stock/d3 losses remain | Retain as useful diagnostic; insufficient |
 
 Streams help when independent work leaves complementary hardware capacity available.
 They can lose when branches saturate the same compute, bandwidth or cache resources,
