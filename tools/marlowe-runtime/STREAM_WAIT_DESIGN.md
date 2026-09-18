@@ -204,40 +204,33 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
 
 ## Productionization and remaining gates
 
-1. Natural-generation screening passed 12/12 retained long-context probes on
-   admission24 and placement24, prefetch on/off, trace0. An untimed trace verifies
-   physical launch/side placement on all four ranks. Its planned exact cross-resident
-   graph match failed because captures differ; the accepted proof is narrower and
-   does not explain the magnitude of the C1 gain. See [model checks and limits](benchmarks/dispatch_cost/C1_MODEL_CHECKS.md).
-2. C4 passed all frozen screens across36 retained trials and36 identities/maps;
-   downloaded raw-data audit matched exactly. The corrected harness waits for
-   ordinary startup warmup to finish before controlled requests. See [C4 results
-   and node-context limits](benchmarks/dispatch_cost/C4_PLACEMENT_RESULTS.md).
-3. Port only the selected changes into a minimal implementation: cached stable
-   assignment, baseline enqueue order, strict admission24, single-device qualification
-   boundary, device-change invalidation and unconditional actual tails. The prepared
-   source invalidates cached eligibility even when a parameter setter subsequently
-   fails; ordinary same-device updates preserve it. Remove rejected diagnostics. Do not
-   change history capacity, packet alignment/retirement or signal eligibility.
-   Removing diagnostics also removes host work and an unused instruction word;
-   those compiled differences require the new-byte performance bridge.
-4. The corrected minimal HIP library has built and passed84 one-GPU processes
-   plus two two-device processes:2,560 PyTorch rows,384 lifecycle rows,576 terminal
-   rows,96 entry rows and4 device-invalidation rows. Its exact-byte performance
-   bridge completed and failed the frozen loss screens. Preserve this result and
-   isolate the remaining cost before selecting another minimal candidate. Any
-   changed candidate needs exact-byte correctness, microbenchmark qualification
-   and final model confirmation. The minimal fused port now passes 120 single-GPU
-   and two two-device correctness processes on HIP1de1c55a. Its broad performance
-   screens remain pending. Packaging an unqualified candidate for these checks
-   does not authorize deployment; qualification and stock rollback remain required.
+1. The minimal source port is complete: strict admission 24, cached stable placement,
+   baseline enqueue order, actual stream tails and required launch-entry ordering.
+   Eligible flat single-device kernel graphs fuse that entry into the first batch.
+   Device-changing updates invalidate both cached policies, including failed updates.
+   Rejected diagnostics and experimental packet/poll controls are absent.
+2. Exact candidate HIP1de1c55a passes 120 single-GPU and two two-device correctness
+   processes, including PyTorch, entry transfers, publication, disabled roots and
+   lifecycle tests. Historical fault-injection coverage is not presented as an
+   exact-byte injection test of this package, which has no fault hooks.
+3. Broad52217 retains 95.772% waiter-excess removal but fails the original stock
+   performance screens. Confirmation52255 does not repeat the two new-versus-prior
+   aggregate losses above 2%; the two-stream stock loss remains 3.29%. Flags-off
+   grouped losses from the broad run also remain unresolved. Preserve both runs;
+   no pooling, exclusions or qualification waiver.
+4. Retained C1 and C4 ABBA comparisons pass their frozen package-preservation bounds
+   versus historical d3. Each has 24 timing trials, 24 natural responses and 24
+   identities/maps. These qualify the narrow model comparison, not deployment.
+   Remaining work must target the microbenchmark costs. A changed candidate still
+   requires relevant correctness and performance checks; another full-model run
+   needs new runtime bytes or a distinct unresolved concern.
 
 The generic tail fix is in PR1 commit b36e37b, and the generic entry repair is
 commit d862ffe. Current PR source includes the minimal opt-in admission24 and
 flat single-device placement policy, plus automatic first-batch integration of
 qualified entry dependencies. Candidate `marlowe-hip-7.2.4-fused-rc1` is
-HIP1de1c55a / HSA b8cdfe; it has passed correctness but awaits broad performance
-and model evidence. Earlier RC2 is HIP986f1c50, fused diagnostic51980 is
+HIP1de1c55a / HSA b8cdfe; correctness and C1/C4 model screens pass, while the
+stock microbenchmark gates remain failed. Earlier RC2 is HIP986f1c50, fused diagnostic51980 is
 HIPbf7ab372, and historical d3 is HIPd3b22a. The release lock remains unchanged.
 No diagnostic CPU-poll, vendor-value, observation, entry-mode or fault control
 was added to the production-shaped port.
