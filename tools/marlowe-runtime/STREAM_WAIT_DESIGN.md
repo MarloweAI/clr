@@ -135,16 +135,21 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
 
 ## Productionization and remaining gates
 
-1. Run a separate untimed retained-model replay to verify executed placement and
-   queue mappings. The historical admission-control trace entrypoint is incompatible
-   with these exact bytes; do not claim it ran. Keep trace results out of performance.
-2. Run the established natural long-context retrieval probes with trace0. Retain
-   their prompts and acceptance criteria; they are a correctness screen, not a full
-   model equivalence proof. Then test C4 using the retained benchmark protocol.
+1. Natural-generation screening passed 12/12 retained long-context probes on
+   admission24 and placement24, prefetch on/off, trace0. An untimed trace verifies
+   physical launch/side placement on all four ranks. Its planned exact cross-resident
+   graph match failed because captures differ; the accepted proof is narrower and
+   does not explain the magnitude of the C1 gain. See [model checks and limits](benchmarks/dispatch_cost/C1_MODEL_CHECKS.md).
+2. C4 is running with the retained client, six separately started residents and
+   forward/reverse order. Its performance gates remain pending.
 3. Port only the selected changes into a minimal implementation: cached stable
    assignment, baseline enqueue order, strict admission24, single-device qualification
-   boundary and unconditional actual tails. Remove rejected diagnostics. Do not
-   simultaneously change history storage, packet allocation or signal eligibility.
+   boundary, device-change invalidation and unconditional actual tails. The prepared
+   source invalidates cached eligibility even when a parameter setter subsequently
+   fails; ordinary same-device updates preserve it. Remove rejected diagnostics. Do not
+   change history capacity, packet alignment/retirement or signal eligibility.
+   Removing diagnostics also removes host work and an unused instruction word;
+   those compiled differences require the new-byte performance bridge.
 4. Build and validate exact production-candidate bytes: rebuild/performance bridge,
    required correctness checks and final model confirmation. Package an opt-in
    versioned HIP/HSA overlay with stock rollback. Only then qualify/deploy it.

@@ -72,15 +72,12 @@ factorials support this screen; this one allocation is not final qualification.
 
 ## Remaining work
 
-1. Verify executed placement on the retained model in a separate untimed replay.
-   The existing c1_history_entry requires an exported admission-control API that
-   is absent from these bytes, so do not reuse it blindly or claim its trace ran.
-   A trace-enabled startup can use the same bytes with stderr separated by worker
-   PID; timing remains the completed trace0 result. Bound output and replay count.
-2. Run the existing long-context natural-generation probes with trace0 and the
-   retained application. The token-forcing hook only acts on controlled-v1 request
-   IDs; the established chat probes use native generation. Reuse their prompts
-   and acceptance rules. They are a screen, not comprehensive model correctness.
+1. Executed physical placement is verified on all four ranks under trace1 through
+   a narrower same-graph/pool counterfactual. The planned exact cross-resident graph
+   match failed because captures differ; it remains recorded as failed. This does
+   not establish a fixed-graph mechanism for the measured gain.
+2. The existing trace0 natural-generation probes passed 12/12 across admission24
+   and placement24, on/off. This is a limited retrieval screen. See [model checks](C1_MODEL_CHECKS.md).
 3. Test C4 after the model checks, using the existing retained client/protocol.
 4. Port only the selected policy into a minimal default-off implementation,
    restricted to qualified single-device graphs. Keep the unconditional generic
