@@ -200,9 +200,19 @@ waiter-excess removal and passing exact-byte PyTorch/lifecycle checks. An
 independent mixed-workload confirmation also exposes a repeatable 2.6% loss
 versus admission24 for parallel matrix-plus-KV graphs (about 1% versus stock).
 Global node-count ordering is therefore still a candidate with a tradeoff.
-The same-byte LONGPATH/SIDEWAIT split must resolve that attribution before
-advancing the bundled C1 grid. These results also require balancing the actual
-factorial cells; rotating unrelated baseline positions did not counterbalance
+The same-byte LONGPATH/SIDEWAIT split rejects SIDEWAIT alone: every grouped25
+graph row loses 4.7–5.7% in all four balanced rounds. LONGPATH preserves grouped
+gains but couples assignment and enqueue order. Next isolate submission priority
+with baseline stream placement and all interior waits retained; precompute the
+priority at graph scheduling, avoiding hot-replay allocation/sort. Untimed mapping
+receipts must prove placement equivalence and actual ordering changes. The bundled
+C1 grid remains deferred. Completed50925 confirms that enqueue-only priority
+preserves placement but loses the grouped benefit (roughly0% change); coupled
+priority retains4.1–4.7% gains. Traced submission sequences match, so placement
+matters to that gain. The mixed result remains noisy. Next review dependency-aware
+placement rather than promoting the neutral enqueue-only candidate. See
+[placement versus submission](benchmarks/dispatch_cost/GRAPH_ENQUEUE_RESULTS.md).
+These results also require balancing the actual factorial cells; rotating unrelated baseline positions did not counterbalance
 those interventions. See [the graph policy evidence](benchmarks/dispatch_cost/GRAPH_POLICY_RESULTS.md).
 
 Do not deploy unconditional bypass; **a role classifier is not yet selected**.

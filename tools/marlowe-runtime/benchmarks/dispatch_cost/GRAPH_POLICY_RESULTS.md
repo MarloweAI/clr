@@ -98,10 +98,11 @@ Bundle24 loses **2.602% versus admission24** in all three rounds
 combined candidate neutral across the tested configurations. Framework correctness
 and the 96% waiter result do not erase this tradeoff.
 
-The staged C1 bundle grid is deferred. Job 50883 splits LONGPATH and SIDEWAIT on
-the same bytes, with four balanced factorial orders, unchanged mixed/grouped25/
-expert cases and stock. The frozen prediction is that the loss follows ordering:
-prior mixed traces invoke ordering but show no interior policy calls or native
-emissions. This is a hypothesis, not an established cause. Performance execution
-and waiting remain owned by the root standalone launcher; the review agent only
-reviews design/source evidence.
+The staged C1 bundle grid is deferred. Completed job50883 separately enabled
+LONGPATH and SIDEWAIT in four balanced factorial orders. SIDEWAIT alone loses
+4.7–5.7% on every grouped25 graph row in all four rounds, so suppressing waits by
+launch-stream role is rejected. LONGPATH retains useful grouped prefetch gains;
+its mixed result is noisy and does not uniformly repeat the earlier 2.6% loss.
+LONGPATH changes both assignment and submission order. The next diagnostic
+separates those effects while holding SIDEWAIT off; no new ranking heuristic is
+introduced. See [the split results](GRAPH_POLICY_SPLIT_RESULTS.md).
