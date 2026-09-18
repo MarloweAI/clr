@@ -51,8 +51,9 @@ passed768 observations across caps1/4/8 and scheduling controls.720 untimed rece
 verified the selected endpoint against actual per-logical-stream submission order.
 Do not merge streams merely because they share a physical queue.
 
-The corrected generic algorithm is in the PR source. Experimental placement/rank
-controls and trace receipts remain in external diagnostic patches. The measured
+The corrected generic algorithm is in the PR source. Experimental rank controls
+and trace receipts remain in external diagnostic patches; the minimal default-off
+node-count placement policy is now separately present in the PR source. The measured
 candidate was HIPd3b22a17535ac59dae2785661acbf593eba7394c1d8965c9e0356e1389fc35f3,
 HSA b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4,
 basecab5670 plus patch38a91fb038a72604057955a7ab7b140d808c5b8543d6d5aa31a88a88648e6dfc.
@@ -97,3 +98,28 @@ The corrected minimal candidate HIP986f1c50 passed all96 entry rows at caps1/4/8
 across optimization-off, native-only, placement-only and combined profiles in
 job51652, as well as the original async-memset fixture. This is correctness evidence;
 the added marker cost still requires the new-byte performance bridge.
+
+## Device-changing parameter updates
+
+`graph_placement_invalidation.cpp` uses two devices and a read-only host inspector
+compiled with the runtime's exact internal headers and host flags. It verifies
+specific and generic rejected device-changing setters invalidate cached placement,
+source-graph mutation leaves the executable's cache intact, restoring valid
+parameters does not silently re-enable a stale cache, and reconstruction restores
+eligibility. All replays retain asynchronous initialization and verify45 increments.
+The inspector adds no runtime export or timing instrumentation.
+
+Build the host inspector against the same build used for the selected library:
+
+```bash
+python3 compile_internal_inspector.py --build /path/to/runtime-build --output inspector.o
+hipcc -O2 -std=c++17 --offload-arch=gfx950 -c graph_placement_invalidation.cpp -o fixture.o
+hipcc --offload-arch=gfx950 fixture.o inspector.o -o invalidation
+```
+
+Select the exact package and set GPU_GRAPH_NODE_COUNT_PLACEMENT=1. Run with native
+wait0 and1 in a two-GPU allocation. Compile and link separately: hipcc's source
+language selection must not treat the host object as HIP source. Job51652 passed
+all4 labeled invalidation cases, alongside84 single-GPU semantic/framework/ordering
+processes. Its strict downloaded-data audit matched the remote audit. The candidate
+remains unqualified for production until the performance and model bridges pass.

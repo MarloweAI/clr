@@ -5,7 +5,7 @@ HIP/PyTorch APIs and retained application code.
 
 **Selected candidate:** strict native admission at 24 unread producer kernels,
 plus stable node-count-based graph placement with the original enqueue order.
-Keep actual-enqueue stream tails for correctness. Keep original dependency packets
+Keep actual-enqueue stream tails and launch-entry dependencies for correctness. Keep original dependency packets
 and all physical-queue, signal-ABI/value and retirement checks. Do not enable
 unconditional bypass, marker omission or launch-stream-role suppression.
 
@@ -78,6 +78,16 @@ exposed premature completion from that old reconstruction. Track the actual last
 enqueued command per logical stream instead, preserving per-segment ownership and
 original dependencies. This is an unconditional correctness fix, independent of
 whether the placement optimization ships. It is already pushed in PR1.
+
+**Launch entry.** Qualification exposed a separate stock segmented-path defect:
+independent side roots could run before preceding launch-stream initialization,
+then have their results overwritten. The classic path already forks that
+predecessor. The generic repair retains the launch frontier before graph submission
+and emits ordinary markers to distinct logical side-root streams, preserving
+external-copy cache/fence scope. Single-root/all-launch graphs avoid the fork.
+Stock, diagnostic and the first minimal candidate reproduced the error; the
+corrected candidate passes asynchronous entry and lifecycle checks. This required
+repair adds work in multi-root cases, so its cost must be included in the bridge.
 
 No kernel-driver or firmware replacement is required for this CLR overlay. The
 precise lower-level cause of the original waiter interference and short-join
@@ -154,13 +164,19 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
    change history capacity, packet alignment/retirement or signal eligibility.
    Removing diagnostics also removes host work and an unused instruction word;
    those compiled differences require the new-byte performance bridge.
-4. The minimal HIP library has built. Validate its exact candidate bytes: rebuild/performance bridge,
+4. The corrected minimal HIP library has built and passed84 one-GPU processes
+   plus two two-device processes:2,560 PyTorch rows,384 lifecycle rows,576 terminal
+   rows,96 entry rows and4 device-invalidation rows. Performance qualification
+   on its exact bytes is now running: rebuild/performance bridge,
    required correctness checks and final model confirmation. Package an opt-in
    versioned HIP/HSA overlay with stock rollback. Only then qualify/deploy it.
 
-The generic tail fix is in PR1 commit b36e37b. Admission24 plus placement currently
-lives in the immutable `graph-tail-diagnostic1` patch/package, HIP d3b22a / HSA b8cdfe.
-The release lock is unchanged. The remaining historical residual should not prompt
+The generic tail fix is in PR1 commit b36e37b, and the generic entry repair is
+commit d862ffe. The current PR source now includes the minimal opt-in admission24
+and flat single-device placement policy. Corrected qualification package
+`marlowe-hip-7.2.4-placement-rc2` is HIP986f1c50 / HSA b8cdfe; the earlier measured
+`graph-tail-diagnostic1` package remains HIPd3b22a. The minimal package remains
+unqualified for production pending its performance/model bridges. The release lock is unchanged. The remaining historical residual should not prompt
 another optimization before qualifying this candidate.
 
 Source: [admission policy](NATIVE_WAIT_POLICY.md),

@@ -151,6 +151,8 @@ release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
         "Trace native event counts at queue destruction")                     \
 release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
         "Experimental gfx950 native event pre-wait")                          \
+release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
+        "Place longer graph segments first without changing enqueue order")  \
 release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
          "The maximum number of HW queues allocated per device")              \
 release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \

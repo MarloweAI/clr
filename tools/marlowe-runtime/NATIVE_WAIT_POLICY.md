@@ -4,7 +4,9 @@ The original unconditional native prewait removes about 2 ms of overhead from a
 2,048-kernel pending-wait reproduction, but can delay short branch starts and
 joins. Balanced 64-stage attention chains regressed roughly 77–89% with that
 version. Keep ordinary AQL waits at short dependency boundaries and insert the
-native prewait only while at least 256 actual producer kernels remain unread.
+native prewait only while at least24 actual producer kernels remain unread.
+Released v9 used256; the selected candidate lowers that empirical cost threshold
+while preserving the256-entry storage and all physical/signal eligibility checks.
 
 Each logical stream keeps a fixed ring containing queue indices of its latest 256
 kernel packets. Intervening markers, dependencies and other streams' packets do
@@ -13,10 +15,10 @@ checks the actual kernel-dispatch packet type. Recording is gated by native-wait
 enablement, and changing the physical queue id clears the history.
 
 Each retained signal generation carries the producer's numeric physical queue id
-and the oldest index in that 256-kernel history. No producer or queue pointer is
+and the index of the24th most recent kernel in that history. No producer or queue pointer is
 stored in the signal. At the consumer, the policy excludes a shared physical
 queue and rechecks current producer progress. Admission requires the current read
-index to be at or before the recorded oldest index, proving all 256 recorded own
+index to be at or before that recorded threshold index, proving the last24 own
 kernels are still unread. This does not count a packet span or reuse a stale
 estimated backlog after the producer drains.
 
@@ -37,9 +39,12 @@ The preceding v8 policy required 256 consecutive unread kernel packets. Retained
 C1 prefetch-off decode fell from~15 ms to~17 ms because its important producer wait
 reported only 7 consecutive kernels, while roughly 2,300 packets still preceded
 producer completion. A matched diagnostic restored~15 ms by changing only native
-admission. The position history recovers this opportunity while retaining the
-256-kernel threshold, and its diagnostic build passed the existing attention
-regression controls and retained about 96% of the original waiter benefit.
+admission. The released position-history policy recovered this opportunity at the256-kernel
+threshold. Later same-byte diagnostics lowered only admission to24 and recovered
+roughly7% on C1 prefetch-on while retaining the important microbenchmark controls
+and about96% of the original waiter benefit. The production candidate keeps all
+256 history slots and uses a different indexed threshold; recording/reset rules
+and signal metadata remain unchanged. See [current design and evidence](STREAM_WAIT_DESIGN.md).
 
 Final release qualification must identify exact packaged library hashes. A
 source change or diagnostic result alone does not qualify another build.
@@ -66,5 +71,7 @@ The user-paused driver-gap investigation is not a prerequisite for this change.
 
 Implementation remains in CLR/ROCm7.2.4, independent of SGLang and HiSparse. The
 versioned overlay stays opt-in with stock as a third control. Restart workers
-with GPU_NATIVE_EVENT_WAIT=0 to disable it; restore the stock image to remove the
-overlay. No driver or firmware deployment is required.
+with GPU_NATIVE_EVENT_WAIT=0 to disable native prewait. The separate
+GPU_GRAPH_NODE_COUNT_PLACEMENT flag controls opt-in cached graph placement; set
+both flags0 to disable both optimizations. Generic entry/tail ordering repairs
+remain active. Restore the stock image to remove the overlay. No driver or firmware deployment is required.

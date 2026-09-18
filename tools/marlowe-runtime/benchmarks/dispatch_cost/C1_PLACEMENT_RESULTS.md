@@ -87,9 +87,11 @@ factorials support this screen; this one allocation is not final qualification.
    Rebuild bridges, correctness checks and a final model confirmation must use
    exact production-candidate bytes before packaging/deployment.
 
-The generic actual-tail correction is already pushed to PR1 (b36e37b); placement24
-remains in the versioned diagnostic patch/package. Publishing this result does not
-change the release lock or deploy a runtime. The remaining historical residual
+The generic actual-tail correction is already in PR1 (b36e37b). These timings use
+the immutable diagnostic package; the minimal opt-in policy and a newly identified
+launch-entry ordering repair are now in the PR source, with exact-byte performance
+qualification pending. Publishing this result does not change the release lock or
+deploy a runtime. The remaining historical residual
 should not trigger another optimization until the current candidate is qualified.
 
 Artifacts: c1-placement-j51180/{manifest.json,audit.json,mirror-audit.json,contrasts.json}

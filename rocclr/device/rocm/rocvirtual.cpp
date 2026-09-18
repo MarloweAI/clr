@@ -1263,7 +1263,7 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
             static_cast<unsigned long long>(threshold_index),
             static_cast<unsigned long long>(read_index));
   }
-  // The recorded index is the oldest of 256 actual kernels, regardless of gaps.
+  // The recorded index is the oldest of the required actual kernels, regardless of gaps.
   // Rechecking this exact index cannot count intervening non-kernel packets or
   // mistake a drained kernel history for currently outstanding work.
   if (read_index > threshold_index) return;

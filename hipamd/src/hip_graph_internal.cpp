@@ -224,6 +224,8 @@ hipError_t Graph::ScheduleNodes() {
       segments_.clear();
       node_to_segment_id_.clear();
       segments_per_level_.clear();
+      assignment_segments_per_level_.clear();
+      assignment_device_id_ = -1;
       max_dependency_level_ = -1;
       // Disable segment scheduling for this graph permanently
       use_segment_scheduling_ = false;
@@ -401,6 +403,8 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
   max_dependency_level_ = -1;
   max_streams_ = 1;
   segments_per_level_.clear();
+  assignment_segments_per_level_.clear();
+  assignment_device_id_ = -1;
 
   // Initialize in-degree for each segment and enqueue root segments
   for (size_t i = 0; i < segments_.size(); ++i) {
@@ -443,6 +447,29 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
         queue.push(edge_id);
         // Add segment to its dependency level
         segments_per_level_[edge_segment.dependency_level].push_back(edge_id);
+      }
+    }
+  }
+
+  // Keep submission order unchanged. This empirical placement policy is only
+  // qualified for a flat graph whose nodes all belong to one known device.
+  if (GPU_GRAPH_NODE_COUNT_PLACEMENT && !segments_.empty() &&
+      !segments_.front().nodes.empty()) {
+    const int device_id = segments_.front().nodes.front()->GetDeviceId();
+    const bool single_device = device_id >= 0 &&
+        std::all_of(segments_.begin(), segments_.end(), [device_id](const Segment& segment) {
+          return segment.child_graph_ptr == nullptr && !segment.nodes.empty() &&
+              std::all_of(segment.nodes.begin(), segment.nodes.end(), [device_id](Node node) {
+                return node->GetDeviceId() == device_id;
+              });
+        });
+    if (single_device) {
+      assignment_device_id_ = device_id;
+      assignment_segments_per_level_ = segments_per_level_;
+      for (auto& level : assignment_segments_per_level_) {
+        std::stable_sort(level.second.begin(), level.second.end(), [this](int lhs, int rhs) {
+          return segments_[lhs].nodes.size() > segments_[rhs].nodes.size();
+        });
       }
     }
   }
@@ -1437,8 +1464,17 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
 
     const auto& segments_at_level = level_it->second;
 
-    // Assign streams to segments at this level
-    AssignStreamsToSegments(segments_at_level, launch_stream, streams, segment_to_stream);
+    // Only use the cached policy on the qualified single-device launch path.
+    // Empty streams are also used by child/multi-device paths; preserve those.
+    const std::vector<int>* assignment_order = &segments_at_level;
+    if (!streams.empty() && max_streams_dev_.size() == 1 &&
+        assignment_device_id_ == launch_stream->DeviceId()) {
+      auto assignment_it = assignment_segments_per_level_.find(level);
+      if (assignment_it != assignment_segments_per_level_.end()) {
+        assignment_order = &assignment_it->second;
+      }
+    }
+    AssignStreamsToSegments(*assignment_order, launch_stream, streams, segment_to_stream);
 
     // Graph roots must follow work already queued on the application launch
     // stream, including copies and memory initialization outside this graph.
