@@ -259,3 +259,16 @@ completion-observation lag and sampling overhead; CPU timestamps are not wait-en
 Ship a single coherent policy only after those gates, with an opt-in versioned
 HIP/HSA overlay and stock rollback. Keep timing/debug harnesses outside the runtime
 implementation. The current release lock and production qualification are unchanged.
+
+
+### Actual stream endpoints are a correctness invariant
+
+The placement-only discriminator exposed an early-completion defect: maximum
+segment dependency level does not identify the last command when independent
+segments share a level and stream. Job51007 failed4/48 observations with correct
+eventual arithmetic; job51020 reproduced it with native waiting off as well as
+on. The correction tracks actual enqueue tails per logical stream, with unchanged
+command ownership and dependency packets.768 corrected completion observations
+and75 framework/lifecycle checks passed on diagnostic bytes. This generic fix is
+now in the PR source; no new release is implied. See
+[completion evidence and coverage](benchmarks/graph_completion/README.md).
