@@ -40,6 +40,13 @@ with pending CPU status. A completed-frontier shortcut has no observed opportuni
 at this sampled point. The next architecture review concerns pending entry
 dependencies, while preserving their full synchronization contract.
 
+A narrowly scoped [entry-native prewait diagnostic](benchmarks/dispatch_cost/ENTRY_NATIVE_RESULTS.md)
+then tested the pending-entry mechanism directly. It worsened 14 cells by more than
+2% versus the identical-byte switch-off control, with no corresponding completed-start
+losses above 2%. The policy is rejected. Long-wait excess removal remained 95.80%;
+short pending dependencies still require cost admission. Next review: integrate the
+entry dependency with first-batch submission while preserving visibility and ownership.
+
 ## Stock architecture
 
 ```mermaid
@@ -133,6 +140,7 @@ shader or infer firmware behavior from timings alone.
 | Lazy entry submission | One target improves 2.45%, stock losses remain | Insufficient |
 | Shared entry CPU retirement | Five target effects range from -0.51% to +0.08% | Do not select |
 | Kernel-only entry release deferral | No target reaches 2% gain; stock losses remain, waiter removal 95.86% | Do not select |
+| Graph-entry native cost override | 14 same-byte losses >2%; b16/two-stream expert +15.91%; sealed controls neutral | Reject |
 
 Streams help when independent work leaves complementary hardware capacity available.
 They can lose when branches saturate the same compute, bandwidth or cache resources,
