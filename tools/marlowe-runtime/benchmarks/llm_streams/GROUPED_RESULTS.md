@@ -213,9 +213,8 @@ This does **not** explain the full gap: bypass remains 1.580138 ms/token above
 the c82 median14.897670 from49656. These runtime medians come from different
 jobs. Ordering/marker effects cannot simply be added to the admission effect:
 ordering's earlier0.414241ms benefit was measured with the guard on, and may
-interact with which physical queue receives native waits. The next hypothesis
-is that graph ordering changes the native-wait benefit. No combined result has
-been measured yet. Unrestricted admission still fails the microbenchmarks and
+interact with which physical queue receives native waits. This motivated testing whether graph ordering changes the native-wait benefit;
+the completed combined comparison is reported below. Unrestricted admission still fails the microbenchmarks and
 is not a production fix.
 
 Released-v9 trials were46.755106,17.361975,17.400892; guarded diagnostic trials
@@ -257,8 +256,8 @@ Ordering saves 0.166 ms with the guard and 1.102 ms without it: an additional
 0.936 ms interaction, positive in all three paired rounds (0.903, 0.819,
 0.960 ms). The 32-layer case also shows a positive interaction in each round
 (0.440, 0.411, 0.294 ms). The combined 32-layer case is 10.916 ms versus c82
-10.940 ms measured in that ordering matrix. This motivates a model factorial;
-it does not establish the model's interaction yet.
+10.940 ms measured in that ordering matrix. This motivated the model factorial reported below; these microbenchmarks alone
+do not establish the model's interaction.
 
 This is still **not a general performance fix**. With four kernels/layer,
 ordering enabled and prefetch on, bypass regresses the 32/64-layer graphs by
@@ -271,3 +270,58 @@ Artifacts: `interaction-{s1,s22}-l{0,1}-j49816`,
 `interaction-micro-audit.json` under the C1 prefetch investigation directory.
 The exact runtime source patch and compiled-control audit are included in
 `marlowe-hip-7.2.4-v9-interaction-diagnostic1`, explicitly unqualified.
+
+
+## Model confirmation of the interaction (49875)
+
+C1 with prefetch on, TP4 on node2, retained application `e4b3fe5`, inherited
+CPU affinity, native wait enabled and trace disabled. All four cells use the
+same diagnostic HIP bytes (`2aaca46a...`, full hash above) and unchanged HSA.
+The order was L0B0, L0B1, L1B0, L1B1, with three retained trials per cell and
+one allocation. This is a sequential factorial, not a randomized crossover.
+
+| Ordering | Admission | Trials, ms/token | Median, ms/token |
+|---|---|---|---:|
+| Original | Guard retained | 17.398362, 17.389527, 17.420673 | 17.398362 |
+| Original | Bypassed | 16.520939, 16.528382, 22.281806 | 16.528382 |
+| Longer segments first | Guard retained | 16.997674, 17.003614, 17.002967 | 17.002967 |
+| Longer segments first | Bypassed | 24.770733, 15.334502, 15.320906 | 15.334502 |
+
+Ordering alone saves 0.395395 ms/token; admission bypass alone saves 0.869980.
+Together they save **2.063860 ms/token (11.86%)**. Ordering saves 1.193881 ms
+with admission bypassed, yielding a **0.798485 ms interaction** beyond the
+standalone effects. This corroborates the grouped-prefetch microbenchmark:
+the two runtime policies interact materially in the real C1 workload.
+
+The 15.334502 ms combined median remains 0.436832 ms above the historical
+c82 native-on/marker2 median of 14.897670. That residual is a cross-job
+comparison and does not isolate remaining marker, queue-policy, or graph
+implementation differences. Nor does this experiment isolate each component
+of the admission gate or prove the precise per-wait mechanism. The main
+performance discrepancy is substantially explained, but the residual and a
+policy that preserves the regression controls remain unresolved. The
+combined diagnostic is **not production-qualified**.
+
+Job 49875 completed 0:0. Independent audit recomputed all 192 measured
+intervals in each of 12 trials and verified application/input fingerprints,
+rank receipts, six distinct startup identities per cohort, exact equality to
+six post-timing worker-map PIDs, and mapped HIP/HSA hashes. Slow trials above
+are retained; no multi-second-gap investigation was performed. The benchmark
+agent's separate final report is pending parser reconciliation.
+
+Audit provenance: job 49839 stopped because its capture parser read only the
+first identity record on each line. Two complete JSON records can share a
+line. Its affected cohort lacks post-timing maps and remains provisional.
+Before 49875 finalization, the post-timing parser was corrected to read all
+marker-delimited records; strict identity and map checks were retained.
+Before/after hashes are `ca87545e2900e9753fa2a815673e3f1a391968521fe453f388050dd70e95411b`
+and `1bd4cf5b92c2ae887cdb4d15c373c78dc47e08a1503f410edb87e8aa7dc5076f`.
+The startup manifest may record the earlier parser hash; this post-timing
+change is documented separately, without rewriting manifests or changing
+application/runtime bytes. In 49875 L1B0, six identity records occupy five
+lines; all six match the captured worker maps. A redundant rerun, 49933,
+was canceled at startup after this was verified.
+
+Artifacts: `model-interaction-j49875-{l0b0,l0b1,l1b0,l1b1}`,
+`model-interaction-j49875-audit.json`, `audit_interaction_model.py`, and
+`model-interaction-parser-fix` under the C1 prefetch investigation directory.
