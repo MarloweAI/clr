@@ -17,7 +17,11 @@ two-stream experts still lose3.42% to stock, and four expert targets lose4.37–
 to historical d3. Final qualification remains held. The [corrected-byte C1 bridge](benchmarks/graph_completion/FUSED_C1_RESULTS.md)
 stays within 0.48% of historical d3 in both prefetch states and both matched
 blocks. Prefetch-on is within 1.3–1.6% of the separate historical best. This
-passes the model screens but cannot waive the microbenchmark failures. C4 is next.
+passes the model screens but cannot waive the microbenchmark failures. The
+[C4 extension](benchmarks/graph_completion/FUSED_C4_RESULTS.md) also passes:
+prefetch-on is 0.08–0.35% faster than d3, and off ranges from -0.23% to +0.04%.
+It is within 0.66–0.72% of the separate historical prefetch-on best. No further
+full-model rerun is needed without a new candidate or distinct unresolved concern.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
