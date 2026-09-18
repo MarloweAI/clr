@@ -52,3 +52,5 @@ The private diagnostic runner only generalizes treatment labels/comparison terms
 [Logical-stream coalescing diagnostic](LOGICAL_COALESCE_RESULTS.md) recovers most of the regression: original-kernel graph replay20.262us versus current parent22.148us and stock19.914us. It still fails the all-round2% gate and has update/device-fallback issues to address before broader qualification. No runtime is promoted.
 
 [Corrected mapping and shared retirement](SHARED_RETIREMENT_RESULTS.md), job53091, passes the unchanged Hassan graph screen: 19.108us versus stock19.903us, approximately4% faster with every round improving. This remains a diagnostic; other workloads and a general placement policy are unqualified.
+
+[Parallel-workload holdouts](COALESCE_HOLDOUT_RESULTS.md), job53134, reject unconditional coalescing: parallel expert graphs lose46–75% against stock. Multiple streams must be preserved there; per-stream retirement sharing and a general lane policy remain open.
