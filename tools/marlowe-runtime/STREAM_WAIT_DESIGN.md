@@ -30,8 +30,11 @@ The [grouped flags-off attribution](benchmarks/dispatch_cost/GROUPED_ATTRIBUTION
 then reproduced +2.46/+2.66% long-prefetch losses versus repair-only bytes. Clean
 rebuild and repair-only contrasts stay within2% GPU/host across24cells. Those
 graphs have one root: the entry fork is inactive, correcting the earlier fallback
-explanation. Current-off allocates an extra stream; a same-byte spare toggle is
-the next causal test, not an established explanation or a promoted policy.
+explanation. The subsequent [same-byte spare probe](benchmarks/dispatch_cost/QUEUE_SPARE_RESULTS.md)
+recovers those grouped losses (-2.08/-2.23%) by removing the spare, but regresses
+four-stream experts by20–51%. Actual used physical queues change2→3 for grouped
+and3→4 for four-stream experts. Global removal is rejected: allocation and
+placement need a joint policy. The two-stream expert penalty is unchanged.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
