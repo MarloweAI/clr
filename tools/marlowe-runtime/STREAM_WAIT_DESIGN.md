@@ -30,6 +30,13 @@ Host completion measurements show those losses too, so GPU timestamp undercount
 alone is insufficient as an explanation. The target remains unchanged
 HIP/PyTorch APIs and retained application code on ROCm 7.2.4 / gfx950.
 
+A subsequent [completed-start diagnostic](benchmarks/dispatch_cost/ENTRY_SEALED_RESULTS.md)
+keeps runtime bytes and graph bodies fixed. Completing the begin event before launch
+reduces the KV relative host penalty from 3.16% to 0.08% versus stock, while expert
+penalties persist. This points to frontier/scheduling state, not a sufficient runtime
+fix. The next discriminator observes hardware readiness separately from CPU status
+before deciding whether a completed-frontier fast path is worthwhile.
+
 ## Stock architecture
 
 ```mermaid
