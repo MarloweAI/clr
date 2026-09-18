@@ -1394,6 +1394,9 @@ class AccumulateCommand : public Command {
   //! Kernel names and timestamps list for activity profiling
   std::vector<std::string> kernelNames_;
   const std::vector<std::string>* kernelNamesRef_ = nullptr;
+  // Separate from eventWaitList: import only once, retain through GPU retirement.
+  Event* graph_entry_event_ = nullptr;
+  bool graph_entry_pending_ = false;
   std::vector<std::pair<uint64_t, uint64_t>> tsList_;
 
  public:
@@ -1401,6 +1404,24 @@ class AccumulateCommand : public Command {
   AccumulateCommand(HostQueue& queue, const EventWaitList& eventWaitList = nullWaitList,
                     const Event* waitingEvent = nullptr)
       : Command(queue, CL_COMMAND_TASK, eventWaitList, 0, waitingEvent) {}
+
+  void setGraphEntryEvent(Event* event) {
+    assert(graph_entry_event_ == nullptr && event != nullptr);
+    event->retain();
+    graph_entry_event_ = event;
+    graph_entry_pending_ = true;
+  }
+  Event* pendingGraphEntryEvent() const {
+    return graph_entry_pending_ ? graph_entry_event_ : nullptr;
+  }
+  void consumeGraphEntryEvent() { graph_entry_pending_ = false; }
+  void releaseResources() override {
+    if (graph_entry_event_ != nullptr) {
+      graph_entry_event_->release();
+      graph_entry_event_ = nullptr;
+    }
+    Command::releaseResources();
+  }
 
   //! Add kernel name to the list if available
   void addKernelName(const std::string& kernelName) { kernelNames_.push_back(kernelName); }

@@ -44,6 +44,8 @@ namespace hip {
 class Graph;
 class GraphNode;
 class GraphExec;
+struct GraphBlockTimingState;
+class GraphBlockLaunchProbe;
 class UserObject;
 class GraphKernelNode;
 typedef GraphNode* Node;
@@ -454,7 +456,7 @@ class GraphNode : public hipGraphNodeDOTAttribute {
     out << "\"";
     out << "];";
   }
-  void SetDeviceId(int id) { dev_id_ = id; }
+  void SetDeviceId(int id);
   int GetDeviceId() const { return dev_id_; }
 
  protected:
@@ -709,6 +711,18 @@ class Graph {
   //! Calculate dependency levels for segments using topological sort
   void CalculateSegmentTopoDependencyLevels();
 
+  // A setter can change device metadata even when later validation fails.
+  // Disable cached placement in O(1); rescheduling/destruction releases storage.
+  void InvalidateNodeCountPlacementForDevice(int device_id) {
+    if (assignment_device_id_ >= 0 && assignment_device_id_ != device_id) {
+      assignment_device_id_ = -1;
+    }
+    if (entry_fused_device_id_ >= 0 && entry_fused_device_id_ != device_id) {
+      entry_fused_device_id_ = -1;
+    }
+  }
+
+
   //! Runs one node on the assigned stream
   bool RunOneNode(Node node,  //!< Node for the execution on GPU
                   bool wait   //!< Wait dependencies
@@ -837,11 +851,17 @@ class Graph {
   int max_dependency_level_ = -1;
   //!< Map of dependency level to list of segment IDs at that level
   std::unordered_map<int, std::vector<int>> segments_per_level_;
+  //!< Cached assignment only; segments_per_level_ retains the enqueue order.
+  std::unordered_map<int, std::vector<int>> assignment_segments_per_level_;
+  int assignment_device_id_ = -1;
+  int entry_fused_device_id_ = -1;  // Cached flat kernel-only eligibility.
+
 
   std::unordered_map<Node, Node> clonedNodes_;
 
  private:
   friend class GraphExec;
+  friend struct GraphPlacementTestAccess;  // Untimed internal qualification fixture.
   std::vector<Node> vertices_;
   const Graph* pOriginalGraph_ = nullptr;
   //!< graphUserObj_.second stores refcount owned by this graph for user object,
@@ -884,6 +904,15 @@ class Graph {
   std::vector<Batch> batches_;
 };
 
+inline void GraphNode::SetDeviceId(int id) {
+  if (dev_id_ != id) {
+    dev_id_ = id;
+    if (parentGraph_ != nullptr) {
+      parentGraph_->InvalidateNodeCountPlacementForDevice(id);
+    }
+  }
+}
+
 class GraphExec : public amd::ReferenceCountedObject, public Graph {
  public:
   static std::unordered_set<GraphExec*> graphExecSet_;
@@ -897,6 +926,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   }
 
   ~GraphExec() {
+    NoteBlockTimingDestroy();
     for (auto streams : parallel_streams_) {
       for (auto stream : streams.second) {
         if (stream != nullptr) {
@@ -941,6 +971,8 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   hipError_t Init();
   hipError_t CreateStreams(uint32_t num_streams, int devId = 0);
   hipError_t Run(hip::Stream* stream);
+  void InvalidateBlockTiming();
+  void NoteBlockTimingDestroy();
   // Capture GPU Packets from graph commands
   hipError_t CaptureAQLPackets();
   hipError_t UpdateAQLPacket(hip::GraphNode* node);
@@ -966,6 +998,11 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   bool TopologicalOrder() { return Graph::TopologicalOrder(topoOrder_); }
   //! Update streams for the graph execution with launch stream from application
   void UpdateStreams(hip::Stream* launch_stream);
+  bool CanCoalesce(hip::Stream* launch_stream) const;
+  bool CanTimeGraphBlocks(hip::Stream* stream) const {
+    return use_segment_scheduling_ && max_streams_dev_.size() == 1 &&
+        instantiateDeviceId_ == stream->DeviceId() && entry_fused_device_id_ == stream->DeviceId();
+  }
   //! Find the number of streams required per device for multi-device graph execution
   //! This method analyzes the stream-to-device mappings and recursively processes
   //! child graphs to determine the maximum concurrent streams needed per device
@@ -990,6 +1027,12 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
 
   //! parallel streams per device
   std::unordered_map<int, std::vector<hip::Stream*>> parallel_streams_;
+  friend class GraphBlockLaunchProbe;
+  std::atomic<GraphBlockTimingState*> block_timing_state_{nullptr};
+  std::atomic<uint64_t> block_timing_generation_{1};
+  std::atomic<uint64_t> block_timing_active_runs_{0};
+  std::atomic<uint64_t> block_timing_run_index_{0};
+  bool block_timing_capacity_failed_ = false;  // Only the exclusive sampler owner writes.
   uint64_t flags_ = 0;
   GraphKernelArgManager* kernArgManager_ = nullptr;  //!< Kernel Arg manager for graph.
   int instantiateDeviceId_ = -1;
@@ -997,6 +1040,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   bool repeatLaunch_ = false;
   //!< Track last launch stream to avoid redundant UpdateStreams
   hip::Stream* lastLaunchStream_ = nullptr;
+  bool streams_coalesced_ = false;  // Actual cached logical mapping, not eligibility.
 
   // PacketBatch structure
   struct PacketBatch {
@@ -1461,7 +1505,7 @@ class GraphKernelNode : public GraphNode {
 
   hipError_t SetParams(const hipKernelNodeParams* params) {
     // Update device ID since new params may require validation for the current device.
-    dev_id_ = ihipGetDevice();
+    SetDeviceId(ihipGetDevice());
     hipFunction_t func = getFunc(kernelParams_, dev_id_);
     if (!func) {
       return hipErrorInvalidDeviceFunction;
@@ -1489,7 +1533,7 @@ class GraphKernelNode : public GraphNode {
   hipError_t SetAttrParams(hipKernelNodeAttrID attr, const hipKernelNodeAttrValue* params) {
     hipDeviceProp_t prop = {0};
     // Update device ID since new params may require validation for the current device.
-    dev_id_ = ihipGetDevice();
+    SetDeviceId(ihipGetDevice());
     hipError_t status = ihipGetDeviceProperties(&prop, dev_id_);
     if (hipSuccess != status) {
       return status;
@@ -1578,7 +1622,7 @@ class GraphKernelNode : public GraphNode {
   }
 
   hipError_t SetParams(GraphNode* node) override {
-    dev_id_ = ihipGetDevice();
+    SetDeviceId(ihipGetDevice());
     const GraphKernelNode* kernelNode = static_cast<GraphKernelNode const*>(node);
     return SetParams(&kernelNode->kernelParams_);
   }
@@ -1803,9 +1847,9 @@ class GraphMemcpyNode1D : public GraphMemcpyNode {
               srcMemory->getContext().devices().size() == 1 &&
               dstMemory->getContext().devices().size() == 1)) {
           if (srcMemory->getContext().devices().size() == 1) {
-            dev_id_ = srcMemory->GetDeviceById()->index();
+            SetDeviceId(srcMemory->GetDeviceById()->index());
           } else {
-            dev_id_ = dstMemory->GetDeviceById()->index();
+            SetDeviceId(dstMemory->GetDeviceById()->index());
           }
         }
         break;
