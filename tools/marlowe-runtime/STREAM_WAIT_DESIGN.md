@@ -1,5 +1,13 @@
 # Stream scheduling and native-wait admission
 
+Current RC2 status (job51663): correctness passes and waiter excess removal is
+96.016%, but the unchanged microbenchmark bridge fails its frozen performance
+screens. Repeated graph expert losses reach9.18% versus the earlier diagnostic.
+The new generic entry fork is a source-supported suspect, not yet causally isolated.
+The final new-byte HiSparse bridge is held. See
+[RC2 micro comparison](benchmarks/dispatch_cost/RC2_MICRO_BRIDGE_RESULTS.md).
+
+
 Current design and evidence, 2026-09-18. Target: ROCm 7.2.4 / gfx950, unchanged
 HIP/PyTorch APIs and retained application code.
 

@@ -117,8 +117,9 @@ def main():
     seen_output = False
     while True:
         try:
-            rows = remote(f'squeue -h -j {job} -o "%i|%T|%R"')
-            queue = [s.split('|', 2) for s in rows.splitlines() if s.split('|')[0] == str(job)]
+            # A completed job may already have aged out of squeue, which then
+            # returns an error instead of an empty result. Consult durable
+            # accounting first so a validation retry can reattach to that job.
             rec = accounting(remote(f'sacct -X -n -P -j {job} --format=JobIDRaw,State,ExitCode'), job)
             if rec and rec[0] in TERMINAL:
                 state.update(slurm_state=rec[0], slurm_exit=rec[1])
@@ -133,6 +134,8 @@ def main():
                 state['validation_passed'] = True
                 emit('COMPLETE', job_id=job, validation='passed' if validate else 'Slurm only; no artifact validation supplied')
                 return 0
+            rows = remote(f'squeue -h -j {job} -o "%i|%T|%R"')
+            queue = [s.split('|', 2) for s in rows.splitlines() if s.split('|')[0] == str(job)]
             status = queue[0][1] if queue else (rec[0] if rec else 'ACCOUNTING_PENDING')
             if status != last_status:
                 emit('STATE', job_id=job, state=status, reason=queue[0][2] if queue else '')
