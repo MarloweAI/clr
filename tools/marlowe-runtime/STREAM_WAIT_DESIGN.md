@@ -59,8 +59,14 @@ then preserved captured AGENT release while retaining SYSTEM acquire. All192
 correctness/failure checks and exact scope proofs passed, but target effects
 were only-0.36% to+0.63%. Do not add that change. WaitingSignal already skips
 completed hardware dependencies at consumption; another ready-signal shortcut
-would duplicate existing behavior. Next isolate pending-start sensitivity of
-immutable fused bytes using the existing completed-start measurement control.
+would duplicate existing behavior.
+The [immutable fused completed-start control](benchmarks/dispatch_cost/ENTRY_FUSED_SEALED_RESULTS.md)
+then reduces the two-stream expert host loss versus stock from3.79% to1.61%
+and KV from+1.30% to-0.13%. Sealed host losses above2% are zero versus stock
+and one(2.11%) versus d3. This supports incoming-event-state sensitivity, but
+sealing also changes host/GPU overlap and baseline times. It is not a qualification
+waiver or proof of pure AQL-wait cost. The remaining useful observation is actual
+wait emission at dependency consumption, later than51871's predecessor snapshot.
 
 ## Stock architecture
 
