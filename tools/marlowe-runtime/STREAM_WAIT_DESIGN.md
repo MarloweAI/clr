@@ -67,6 +67,12 @@ and one(2.11%) versus d3. This supports incoming-event-state sensitivity, but
 sealing also changes host/GPU overlap and baseline times. It is not a qualification
 waiver or proof of pure AQL-wait cost. The remaining useful observation is actual
 wait emission at dependency consumption, later than51871's predecessor snapshot.
+The [consumption observer](benchmarks/dispatch_cost/ENTRY_CONSUME_RESULTS.md)
+finds185/192 expert and80/80 KV original-start dependencies selected and emitted
+as entry-containing AQL barriers; completed-start controls emit0/272. All queues
+are physically distinct and CPU waits are off. This establishes submission,
+not GPU stall duration. A bounded CPU-poll diagnostic requires an explicit CPU
+cost limit and normal GPU fallback; no benefit is inferred from these counts.
 
 ## Stock architecture
 
