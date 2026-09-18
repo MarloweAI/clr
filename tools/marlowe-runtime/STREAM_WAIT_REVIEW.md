@@ -259,3 +259,10 @@ recommends separating entry/tail repairs and localizing the GPU critical path.
 [Our assessment](benchmarks/dispatch_cost/FABLE_RESIDUAL_REVIEW.md) records the
 changed plan, source corrections to the review, profiler-path limitations and the
 new Hassan workload requirement. The allocator candidate remains unbuilt/unrun.
+
+
+## 2026-09-18: entry isolation and Hassan Q/K extraction
+
+[Repair factorial](benchmarks/dispatch_cost/REPAIR_FACTORIAL_RESULTS.md) isolates a substantial launch-entry effect at either tail-repair setting; tail effects remain small. The primary immutable bridges and independent reduction pass, with secondary bridge/ordering caveats retained.
+
+[Hassan Q/K microbenchmark](benchmarks/hassan_indexer/README.md) now preserves the supplied dimensions, dispatches and scheduler in a single-GPU extraction. [Initial results](benchmarks/hassan_indexer/RESULTS.md) show current cab16 event-graph replay +11.612% versus stock, serial neutral. This is a new required failing performance gate. Existing fusedRC1 HiSparse/waiter evidence does not qualify these bytes or erase this loss.
