@@ -247,7 +247,9 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
 3. Broad52217 retains 95.772% waiter-excess removal but fails the original stock
    performance screens. Confirmation52255 does not repeat the two new-versus-prior
    aggregate losses above 2%; the two-stream stock loss remains 3.29%. Flags-off
-   grouped losses from the broad run also remain unresolved. Preserve both runs;
+   grouped losses are recovered by the later selective-spare diagnostic, whose
+   [enabled-path and pool checks](benchmarks/dispatch_cost/QUALIFIED_SPARE_ACCEPTANCE_RESULTS.md)
+   pass. The two-stream loss remains3.76% on those bytes. Preserve all runs;
    no pooling, exclusions or qualification waiver.
 4. Retained C1 and C4 ABBA comparisons pass their frozen package-preservation bounds
    versus historical d3. Each has 24 timing trials, 24 natural responses and 24

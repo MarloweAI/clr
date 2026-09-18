@@ -6,8 +6,9 @@ same-byte legacy policy it improves grouped L32/L64 prefetch-on graph GPU time b
 approximately stock performance. Four-stream expert gains are retained. Across
 these76 cells there are zero >2% GPU/host regressions versus same-byte legacy;
 against stock the remaining >2% elapsed loss is balanced b64/two-stream graph.
-The broader suite, heterogeneous queue-pool history and new-byte model bridge
-remain unqualified. No production package is promoted.
+The broader suite and new-byte model bridge remain unqualified. The subsequent
+[52715 acceptance](QUALIFIED_SPARE_ACCEPTANCE_RESULTS.md) covers heterogeneous
+queue-pool history and enabled-path preservation. No production package is promoted.
 
 ## Policy and semantic limits
 
@@ -115,8 +116,9 @@ applied to the PR's runtime files.
 - Frozen spec:c11ea847ba44754c3a05528fcdf5422578ea1fa2855b925d21e4a8c57a1da2de.
 - Manifest:a7f2c356c6c2b514daf357c75bd1ffd25629ad484165aaaced1f705ef7841c9e.
 
-Next acceptance work includes heterogeneous kernel/copy graphs sharing one pool,
-full-family on/off comparisons, and resolving the two-stream expert penalty.
+The subsequent [52715 acceptance](QUALIFIED_SPARE_ACCEPTANCE_RESULTS.md) closes
+the bounded heterogeneous pool and enabled-path checks. Resolving the two-stream
+expert penalty and broader qualification remain.
 The per-graph policy can change pool history even when each individual graph
 chooses a previously measured arm. Historical model/waiter results cannot be
 assigned to these new bytes. Keep production qualification false.
