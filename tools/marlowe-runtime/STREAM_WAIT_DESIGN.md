@@ -1,29 +1,34 @@
 # Stream scheduling and native-wait admission
 
-Current RC2 status (job51663): correctness passes and waiter excess removal is
-96.016%, but the unchanged microbenchmark bridge fails its frozen performance
-screens. Repeated graph expert losses reach9.18% versus the earlier diagnostic.
-The new generic entry fork is a source-supported suspect, not yet causally isolated.
-The final new-byte HiSparse bridge is held. See
-[RC2 micro comparison](benchmarks/dispatch_cost/RC2_MICRO_BRIDGE_RESULTS.md).
+Current status, 2026-09-18: the minimal RC2 package passes correctness and removes
+96.016% of waiter excess, but fails the unchanged microbenchmark performance
+screens. Repeated graph expert losses reach 9.18% versus the earlier diagnostic.
+The final new-byte HiSparse bridge is held. The generic entry repair is a
+source-supported suspect; its entire cost has not yet been causally isolated.
+See [RC2 comparison](benchmarks/dispatch_cost/RC2_MICRO_BRIDGE_RESULTS.md).
 
+The selected architecture uses strict native admission at 24 unread producer
+kernels and cached stable node-count placement with the original enqueue order.
+Actual-enqueue stream tails and launch-entry dependencies remain required for
+correctness. Original dependency packets, physical-queue guards, signal ABI/value
+checks and retirement checks stay intact. Both optimization flags default off.
 
-Current design and evidence, 2026-09-18. Target: ROCm 7.2.4 / gfx950, unchanged
-HIP/PyTorch APIs and retained application code.
+The **earlier d3 diagnostic**, which lacked the generic entry repair, reached
+15.23–15.26 ms/token on HiSparse C1 prefetch-on (about 15.4% faster than guarded256)
+and 17.95–17.98 ms/token on C4 (about 10% faster). Prefetch-off was effectively
+neutral. Those numbers were within 2.3–2.4% and about 1% of the separate historical
+bests, respectively. They do not qualify the corrected RC2 bytes or justify using
+the old incomplete synchronization. No production package is qualified yet.
 
-**Selected candidate:** strict native admission at 24 unread producer kernels,
-plus stable node-count-based graph placement with the original enqueue order.
-Keep actual-enqueue stream tails and launch-entry dependencies for correctness. Keep original dependency packets
-and all physical-queue, signal-ABI/value and retirement checks. Do not enable
-unconditional bypass, marker omission or launch-stream-role suppression.
-
-This candidate retains **95.7–95.9% waiter-excess removal**, passes the completed
-microbenchmark gates, and reaches **15.23–15.26 ms/token** on HiSparse C1 prefetch-on:
-about 9% faster than admission24 alone and 15.4% faster than guarded256, with
-prefetch-off effectively neutral. It remains **2.3–2.4% above the historical best**
-of 14.897670 from a separate cohort. C4 now reaches **17.95–17.98 ms/token**, about
-10% faster than guarded256 and within about1% of its separate historical best;
-off stays within0.16% of controls. It is close, but not production-qualified.
+Three subsequent, reviewed same-byte micro diagnostics preserve the entry edge:
+[lazy submission](benchmarks/dispatch_cost/ENTRY_LAZY_RESULTS.md),
+[shared CPU retirement](benchmarks/dispatch_cost/ENTRY_BATCH_RESULTS.md), and
+[kernel-only release deferral](benchmarks/dispatch_cost/ENTRY_ACQUIRE_RESULTS.md).
+None resolves the residual losses. The latest still removes 95.86% of waiter
+excess but loses 2.20% to stock on small-KV gather and 3.94% on two-stream experts.
+Host completion measurements show those losses too, so GPU timestamp undercount
+alone is insufficient as an explanation. The target remains unchanged
+HIP/PyTorch APIs and retained application code on ROCm 7.2.4 / gfx950.
 
 ## Stock architecture
 
@@ -115,6 +120,9 @@ shader or infer firmware behavior from timings alone.
 | Launch-stream-role prewait suppression | Grouped micro regressions around 5%, despite earlier model benefit | Reject global rule |
 | Marker omission | Model median effects dominated by retained variable trials; causal benefit unresolved | Do not include |
 | Actual-enqueue completion tails | Old bytes fail with native waits off and on; corrected completion/lifecycle checks pass | Keep independently |
+| Lazy entry submission | One target improves 2.45%, stock losses remain | Insufficient |
+| Shared entry CPU retirement | Five target effects range from -0.51% to +0.08% | Do not select |
+| Kernel-only entry release deferral | No target reaches 2% gain; stock losses remain, waiter removal 95.86% | Do not select |
 
 Streams help when independent work leaves complementary hardware capacity available.
 They can lose when branches saturate the same compute, bandwidth or cache resources,
@@ -174,18 +182,21 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
    those compiled differences require the new-byte performance bridge.
 4. The corrected minimal HIP library has built and passed84 one-GPU processes
    plus two two-device processes:2,560 PyTorch rows,384 lifecycle rows,576 terminal
-   rows,96 entry rows and4 device-invalidation rows. Performance qualification
-   on its exact bytes is now running: rebuild/performance bridge,
-   required correctness checks and final model confirmation. Package an opt-in
-   versioned HIP/HSA overlay with stock rollback. Only then qualify/deploy it.
+   rows,96 entry rows and4 device-invalidation rows. Its exact-byte performance
+   bridge completed and failed the frozen loss screens. Preserve this result and
+   isolate the remaining cost before selecting another minimal candidate. Any
+   changed candidate needs exact-byte correctness, microbenchmark qualification
+   and final model confirmation. Only then package and qualify an opt-in HIP/HSA
+   overlay with stock rollback.
 
 The generic tail fix is in PR1 commit b36e37b, and the generic entry repair is
 commit d862ffe. The current PR source now includes the minimal opt-in admission24
 and flat single-device placement policy. Corrected qualification package
 `marlowe-hip-7.2.4-placement-rc2` is HIP986f1c50 / HSA b8cdfe; the earlier measured
 `graph-tail-diagnostic1` package remains HIPd3b22a. The minimal package remains
-unqualified for production pending its performance/model bridges. The release lock is unchanged. The remaining historical residual should not prompt
-another optimization before qualifying this candidate.
+unqualified for production after its failed performance bridge. The release lock
+is unchanged. The latest diagnostics remain isolated from the proposed production
+source; none has been promoted.
 
 Source: [admission policy](NATIVE_WAIT_POLICY.md),
 [wait and packet submission](../../rocclr/device/rocm/rocvirtual.cpp),

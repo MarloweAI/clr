@@ -35,6 +35,16 @@ First candidate: retain/materialize the launch predecessor before all graph pack
 
 The original async initialization discriminator found the same missing edge in stock and earlier diagnostics; RC2 corrected it. The entry/tail/lifecycle checks remain required for any alternative. No gap investigation or full-model performance rerun was launched to explain these micro losses.
 
+## Follow-up results
+
+The proposed lazy-submission and shared-retirement experiments completed as jobs
+51714 and 51745. Neither resolves the frozen losses. Job 51810 additionally tested
+kernel-only SYSTEM-acquire entry with deferred release; it also fell short, while
+preserving 95.86% waiter-excess removal. All are same-byte comparisons with full
+correctness and raw artifact audits. See [lazy submission](ENTRY_LAZY_RESULTS.md),
+[CPU retirement](ENTRY_BATCH_RESULTS.md), and [release deferral](ENTRY_ACQUIRE_RESULTS.md).
+The original failed screens remain in force; no final model bridge was launched.
+
 ## Artifact validation recovery
 
 Slurm completed 0:0 and both suites ran their audits and summarizer inside the container. The standalone watcher then redundantly re-ran a library auditor on the login node, where the stock `/opt/rocm-7.2.4` path does not exist. The original failure is retained in the receipt. `verify_placement_bridge_artifacts.py` validates the saved in-container audit/manifest hashes, all raw hashes/control/map receipts, exact source/binaries/references and unchanged recomputed contrasts, without pretending to inspect a live process. Its output distinguishes artifact integrity success from **performance_passed=false**.
