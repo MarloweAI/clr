@@ -42,3 +42,9 @@ The exact same benchmark and cab16 runtime were tested with native wait and node
 Aggregate GPU spread is0.0322us; every registered graph contrast stays below0.63% absolute in every round. Neither toggle removes the22.1us behavior. Both-off retains candidate-common code and enabled selective-spare controls; it is not stock. This run has no contemporaneous stock arm and does not independently establish the stock gap or attribute it to either correctness repair. Permission to emit native waits does not prove actual native emission.
 
 The private diagnostic runner only generalizes treatment labels/comparison terms; benchmark.py is byte-identical to52868. Data and external-source identities match. Frozen spec `2825f05a2bd700e1fcf5ce0a7cf684611f22dbafad2cee0c8563da8c0a6d0336`; raw `iterations/hassan-qk-micro-20260918/controls-j52887`. No performance qualification is claimed.
+
+## Calibrated execution timeline
+
+[Timestamp calibration and resource report](TIMESTAMP_RESULTS.md) records a repeatable scheduling difference in the instrumented 200-replay burst: stock K runs ahead across invocations, whereas current Q/K remain aligned. Probe overhead is measurable and runtime-dependent; this does not quantitatively explain the original gap or transfer to the expert single-replay benchmark. The unchanged original kernels still regress in the new matched comparison.
+
+[Physical queue-cap control](QUEUE_CAP_RESULTS.md) rejects cap1 as a remedy: it retains two logical streams and worsens current graph replay from22.16 to31.65us. A separate logical-stream mapping diagnostic is required to test whether removing unnecessary graph dependencies helps.
