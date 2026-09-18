@@ -1,6 +1,12 @@
 # Stream scheduling and native-wait admission
 
-Current status, 2026-09-18: **no production package is qualified**. The new minimal
+Latest evidence, job53362: [covered final-tail omission](benchmarks/hassan_indexer/COVERED_TAIL_RESULTS.md) fixes the persistent balanced two-stream expert GPU loss:109.654us versus stock111.394us (−1.56%), with all four process rounds improving. Four-stream gains remain and increase. The same-byte omission effect is−4.06%; entry dependencies and useful parallelism are preserved. No aggregate GPU loss exceeds2% across76 expert/grouped cells, but one isolated eager host cell loses0.655us/+4.51% and needs confirmation. This is diagnostic evidence, not a complete acceptance pass.
+
+Hassan still distinguishes two plans: parallel22.219us versus stock19.992us (+11.14%), explicit one-stream/shared19.269us (−3.62%, all ten rounds improve). Unconditional coalescing remains rejected by expert holdouts. A generic per-graph plan selector is still missing. The source is published on a separate diagnostic branch; PR1's main runtime and its earlier qualification are unchanged. No current package is production-qualified.
+
+The next architecture candidate compares whole joined parallel and one-stream plans on actual requested replays. Command-local boundary timestamps and nonblocking callbacks can collect completed-block evidence without turning on queue/activity profiling. It must avoid extra kernel executions and host waits, preserve immutable per-launch plans, invalidate before mutations, calibrate probe bias, and count only future launches that actually use a decision. This is an opt-in proposal for sufficiently reused graphs, not an automatic default or a performance result.
+
+Earlier fusedRC1 qualification, 2026-09-18: **no production package is qualified**. The new minimal
 [fused RC1 candidate](benchmarks/graph_completion/FUSED_RC1_CHECKS.md) passes 120
 single-GPU correctness processes and two two-device checks, including PyTorch.
 Its [broad performance bridge](benchmarks/dispatch_cost/FUSED_RC1_PERFORMANCE.md)
