@@ -1,84 +1,46 @@
 # Stream scheduling and native-wait admission
 
-Current status, 2026-09-18: the minimal RC2 package passes correctness and removes
-96.016% of waiter excess, but fails the unchanged microbenchmark performance
-screens. Repeated graph expert losses reach 9.18% versus the earlier diagnostic.
-The final new-byte HiSparse bridge is held. The generic entry repair is a
-source-supported suspect; its entire cost has not yet been causally isolated.
-See [RC2 comparison](benchmarks/dispatch_cost/RC2_MICRO_BRIDGE_RESULTS.md).
+Current status, 2026-09-18: **no production package is qualified**. The minimal
+RC2 package passes correctness and removes96.016% of waiter excess, but fails the
+unchanged microbenchmark performance screens. The best measured architectural
+improvement is [fused first-batch entry](benchmarks/dispatch_cost/ENTRY_FUSED_RESULTS.md):
+it retains95.83% waiter excess removal and improves small KV by1.20% and balanced
+four-stream experts by2.37–3.15% relative to same-byte lazy markers. However,
+two-stream experts still lose3.42% to stock, and four expert targets lose4.37–5.83%
+to historical d3. The final corrected-byte HiSparse bridge remains held.
 
-The selected architecture uses strict native admission at 24 unread producer
-kernels and cached stable node-count placement with the original enqueue order.
+The selected architecture uses strict native admission at24 unread producer
+kernels and cached stable node-count placement with original enqueue order.
 Actual-enqueue stream tails and launch-entry dependencies remain required for
-correctness. Original dependency packets, physical-queue guards, signal ABI/value
-checks and retirement checks stay intact. Both optimization flags default off.
+correctness. Fusing a required entry dependency into its first captured kernel
+batch is useful; it has not completed production qualification. Both shipping
+optimization flags default off. The target remains unchanged HIP/PyTorch APIs
+and retained application code on ROCm7.2.4/gfx950.
 
 The **earlier d3 diagnostic**, which lacked the generic entry repair, reached
-15.23–15.26 ms/token on HiSparse C1 prefetch-on (about 15.4% faster than guarded256)
-and 17.95–17.98 ms/token on C4 (about 10% faster). Prefetch-off was effectively
-neutral. Those numbers were within 2.3–2.4% and about 1% of the separate historical
-bests, respectively. They do not qualify the corrected RC2 bytes or justify using
-the old incomplete synchronization. No production package is qualified yet.
+15.23–15.26ms/token on HiSparse C1 prefetch-on (about15.4% faster than guarded256)
+and17.95–17.98ms/token on C4 (about10% faster). Prefetch-off was effectively neutral.
+Those were within2.3–2.4% and about1% of the separate historical bests. They do not
+qualify corrected bytes or justify recovering speed by removing synchronization.
 
-Three subsequent, reviewed same-byte micro diagnostics preserve the entry edge:
-[lazy submission](benchmarks/dispatch_cost/ENTRY_LAZY_RESULTS.md),
-[shared CPU retirement](benchmarks/dispatch_cost/ENTRY_BATCH_RESULTS.md), and
-[kernel-only release deferral](benchmarks/dispatch_cost/ENTRY_ACQUIRE_RESULTS.md).
-None resolves the residual losses. The latest still removes 95.86% of waiter
-excess but loses 2.20% to stock on small-KV gather and 3.94% on two-stream experts.
-Host completion measurements show those losses too, so GPU timestamp undercount
-alone is insufficient as an explanation. The target remains unchanged
-HIP/PyTorch APIs and retained application code on ROCm 7.2.4 / gfx950.
+The remaining microbenchmark penalty is sensitive to incoming-event state.
+An [unchanged-byte completed-start control](benchmarks/dispatch_cost/ENTRY_FUSED_SEALED_RESULTS.md)
+reduces the two-stream expert host loss versus stock from3.79% to1.61%, and KV
+from+1.30% to-0.13%. Sealing also changes host/GPU overlap and baseline times;
+this is not a qualification waiver or a measurement of pure GPU wait cost.
+[Consumption observations](benchmarks/dispatch_cost/ENTRY_CONSUME_RESULTS.md)
+find185/192 expert and80/80 KV original dependencies selected as GPU waits,
+versus0/272 with completed starts. They measure submission, not GPU stall duration.
 
-A subsequent [completed-start diagnostic](benchmarks/dispatch_cost/ENTRY_SEALED_RESULTS.md)
-keeps runtime bytes and graph bodies fixed. Completing the begin event before launch
-reduces the KV relative host penalty from 3.16% to 0.08% versus stock, while expert
-penalties persist. This points to frontier/scheduling state, not a sufficient runtime
-fix. The subsequent [untimed readiness observations](benchmarks/dispatch_cost/ENTRY_FRONTIER_RESULTS.md)
-find 0/256 original frontiers ready and 256/256 completed-start controls ready, all
-with pending CPU status. A completed-frontier shortcut has no observed opportunity
-at this sampled point. The next architecture review concerns pending entry
-dependencies, while preserving their full synchronization contract.
-
-A narrowly scoped [entry-native prewait diagnostic](benchmarks/dispatch_cost/ENTRY_NATIVE_RESULTS.md)
-then tested the pending-entry mechanism directly. It worsened 14 cells by more than
-2% versus the identical-byte switch-off control, with no corresponding completed-start
-losses above 2%. The policy is rejected. Long-wait excess removal remained 95.80%;
-short pending dependencies still require cost admission.
-
-The subsequent [first-batch dependency diagnostic](benchmarks/dispatch_cost/ENTRY_FUSED_RESULTS.md)
-passed 240 correctness/failure checks and all dependency proofs. Against same-byte
-lazy markers it improves small KV by1.20%, small four-stream experts by2.37%,
-and large four-stream experts by3.15%, with no aggregate >2% GPU/host elapsed-time loss.
-Waiter overhead removal remains95.83%. This is a useful architectural direction,
-but the two-stream expert case still loses3.42% to stock and four expert targets
-lose4.37–5.83% to historical d3. Source/package qualification and the model bridge
-remain held. Preserve the required dependency while isolating its residual cost.
-The [first-kernel release discriminator](benchmarks/dispatch_cost/ENTRY_SCOPE_RESULTS.md)
-then preserved captured AGENT release while retaining SYSTEM acquire. All192
-correctness/failure checks and exact scope proofs passed, but target effects
-were only-0.36% to+0.63%. Do not add that change. WaitingSignal already skips
-completed hardware dependencies at consumption; another ready-signal shortcut
-would duplicate existing behavior.
-The [immutable fused completed-start control](benchmarks/dispatch_cost/ENTRY_FUSED_SEALED_RESULTS.md)
-then reduces the two-stream expert host loss versus stock from3.79% to1.61%
-and KV from+1.30% to-0.13%. Sealed host losses above2% are zero versus stock
-and one(2.11%) versus d3. This supports incoming-event-state sensitivity, but
-sealing also changes host/GPU overlap and baseline times. It is not a qualification
-waiver or proof of pure AQL-wait cost. The remaining useful observation is actual
-wait emission at dependency consumption, later than51871's predecessor snapshot.
-The [consumption observer](benchmarks/dispatch_cost/ENTRY_CONSUME_RESULTS.md)
-finds185/192 expert and80/80 KV original-start dependencies selected and emitted
-as entry-containing AQL barriers; completed-start controls emit0/272. All queues
-are physically distinct and CPU waits are off. This establishes submission,
-not GPU stall duration. A bounded CPU-poll diagnostic requires an explicit CPU
-cost limit and normal GPU fallback; no benefit is inferred from these counts.
-The [bounded CPU-poll diagnostic](benchmarks/dispatch_cost/ENTRY_POLL_RESULTS.md)
-then passed192 correctness/failure checks but stopped at its planned mechanism
-gate: all40 KV polls and47/48 expert polls exhausted1000ns while still requiring
-a GPU wait. The sole expert completion was observed at1000ns. No performance
-timing ran. Reject this candidate; preserve the gate instead of lengthening
-the poll or interpreting instrumented counters as a speedup.
+Two direct remedies did not resolve that penalty. A
+[bounded CPU poll](benchmarks/dispatch_cost/ENTRY_POLL_RESULTS.md) passed192 checks
+but stopped at its planned mechanism gate: all40 KV polls and47/48 expert polls
+exhausted1000ns while still requiring a GPU wait. No timing ran. A
+[single-packet barrier-value replacement](benchmarks/dispatch_cost/ENTRY_VALUE_RESULTS.md)
+passed192 checks and actual-emission proofs, but target GPU effects ranged from
+-1.01% to+1.94%; two-stream experts changed only-0.10%. Reject both additions.
+The architecture must preserve the necessary dependency; further work should
+address a distinct source of its latency instead of extending those parameter sweeps.
 
 ## Stock architecture
 
@@ -176,6 +138,7 @@ shader or infer firmware behavior from timings alone.
 | Graph-entry native cost override | 14 same-byte losses >2%; b16/two-stream expert +15.91%; sealed controls neutral | Reject |
 | First-batch dependency integration | No >2% same-byte GPU/host elapsed loss; KV -1.20%, balanced four-stream experts -2.37/-3.15%; residual stock/d3 losses remain | Retain as useful diagnostic; insufficient |
 | First-entry CPU poll, 1000 ns cap | KV 0/40 within-budget completions; experts 1/48; planned gate stops before timing | Reject; no timing or longer-budget retry |
+| Singleton entry barrier-value packet | Exact mechanism verified; GPU target changes -1.01% to +1.94%, two-stream -0.10% | Do not select; close representation branch |
 
 Streams help when independent work leaves complementary hardware capacity available.
 They can lose when branches saturate the same compute, bandwidth or cache resources,
