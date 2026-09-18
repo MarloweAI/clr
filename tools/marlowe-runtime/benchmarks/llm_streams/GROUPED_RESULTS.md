@@ -410,3 +410,40 @@ The microbenchmark regressions above still prevent production qualification.
 Evidence: `model-side-policy-j49988-audit.json`, `audit_side_policy_model.py`,
 `SIDE_POLICY_MODEL_RESULTS.md` in the C1 prefetch investigation; independent
 report `/home/sashawork/dev/v9-side-policy-20260918/RESULTS.md`.
+
+## Unused marker diagnostic (jobs 50081 and 50100)
+
+The next diagnostic adds default-off `GPU_GRAPH_DIAGNOSTIC_OMIT_MARKERS` on
+side-policy bytes. Eligible captured, ordered interior segments omit their
+completion marker and use ordinary CPU command batching. Cross-stream producer
+markers and all maximum-level endpoints remain; profiling and unsupported AQL
+packets retain completion markers. This is not a pure GPU-packet-cost experiment.
+HIP SHA-256: `bc81b3c39f3458c5d1a472a9a5d16ae0090b8397b7b0ca3fc5dab1f3c965f5aa`.
+
+Job 50081 passed 45 processes and 13,680 correctness/control/library-audited
+timing rows on one GPU on node2. Separate trace passes confirmed 1,224 omitted
+and 2,936 retained markers with omission enabled, versus 4,160 retained with
+it disabled. All 48 correctness rows per trace passed; traces are not timings.
+Raw 32-layer grouped-prefetch improvement was 1.29%, but eager execution also
+improved 1.19%, despite being outside the changed graph path. The 64-layer
+and expert cases had mixed round signs. These raw changes are not sufficient
+for a causal performance claim.
+
+Job 50100 repeated only identical-byte omission off/on, six adjacent pairs
+with their order reversed each round, retaining all 1,728 rows. Exact mapped
+hashes, controls, sample coverage and correctness passed. For prefetch-on:
+
+| Layers | Median paired graph saving, us | Median paired graph saving minus eager saving, us |
+|---|---:|---:|
+| 32 | 11.718 | 21.031 |
+| 64 | 243.397 | 24.624 |
+
+The latter adjustment was positive in five of six pairs for each shape. It
+is descriptive: eager execution need not measure all graph timing variation.
+It suggests a small graph-specific benefit, not proof of a 0.216 ms/token
+model benefit. A matched C1 previous-build/new-off/new-on comparison has been
+requested. Endpoint-tie stress and production qualification remain outstanding.
+
+Evidence: `MARKER_POLICY_RESULTS.md`, `marker-policy-j50081-audit.json`,
+`marker-paired-j50100/audit.json`, and their `audit_marker_*` scripts in the
+C1 prefetch investigation directory. All trials and timing rows are retained.
