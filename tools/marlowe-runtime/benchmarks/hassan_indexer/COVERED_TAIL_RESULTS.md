@@ -19,7 +19,7 @@ GPU microseconds; lower is better. Parent is the immutable lane-retirement binar
 
 The balanced b64 two-stream target improves **114.293750→109.653749us**, a same-byte gain of **4.06%**. Stock is111.393750us: the candidate is **1.56% faster**, with every round improving1.01–2.28%. Host completion improves3.76% versus off and1.39% versus stock; CPU submission improves7.58% versus off. The parent-to-new-off bridge is−0.69% GPU and−0.65% submission for this target; it is measured separately and is not assigned to wait omission.
 
-Across all76 expert/grouped cells there are no aggregate GPU losses above2% against stock or new-off. This does **not** pass every original screen: isolated b64-skewed merge/eager host time is15.1775us versus stock14.5225us (+0.655us/+4.51%) and new-off14.5775us (+4.12%). Two of four rounds lose about9%, two are near neutral; GPU median is+0.51% versus stock. The graph-only intervention is inactive on this eager path. Preserve the observation and require unchanged confirmation before claiming broad neutrality; do not exclude trials or investigate multi-second gaps. Submission-only cells also have mixed signed changes and are retained in the raw summary.
+Across all76 expert/grouped cells there are no aggregate GPU losses above2% against stock or new-off. The first allocation did **not** pass every original screen: isolated b64-skewed merge/eager host time is15.1775us versus stock14.5225us (+0.655us/+4.51%) and new-off14.5775us (+4.12%). Two of four rounds lose about9%, two are near neutral; GPU median is+0.51% versus stock. The graph-only intervention is inactive on this eager path. The unchanged confirmation below does not reproduce that loss; preserve both allocations separately; do not exclude trials or investigate multi-second gaps. Submission-only cells also have mixed signed changes and are retained in the raw summary.
 
 Grouped split1 stays within0.12% of stock GPU; split22 is5.06–8.18% faster. These copy graphs use fallback, so their retained gains are not caused by final-wait omission.
 
@@ -60,4 +60,23 @@ The [diagnostic source commit](https://github.com/MarloweAI/clr/commit/40d4389) 
 
 Raw, source/hash manifests, scripts, library mirror and local-final-audit.json: `iterations/hassan-qk-micro-20260918/covered-tail-j53362`, sibling `covered-tail-source.json`, `covered-tail-harness.json`, `covered-tail-full.patch`, `covered-tail-port.patch`, `run_covered_tail.py`, `audit_covered_tail.py`, `covered-tail-lib`. Remote mirror uses the same suffix under `/workspace/home/sasha/amd-runtime-production`.
 
-Next: an opt-in plan selector using completed blocks of actual requested replays, with calibrated timing-marker overhead, no extra kernel executions and an unprobed validation phase. It must report decision lag and exploration amortization; a decision cannot affect already submitted work. Then confirm the eager host screen and qualify one chosen package across broader microbenchmarks, waiter overhead, PyTorch and retained HiSparse C1 on/off, followed by C4. Prior fusedRC1 waiter/PyTorch/model qualifications do not transfer to these bytes.
+Next: an opt-in plan selector using completed blocks of actual requested replays, with calibrated timing-marker overhead, no extra kernel executions and an unprobed validation phase. It must report decision lag and exploration amortization; a decision cannot affect already submitted work. The eager host confirmation below is complete. Qualify one chosen package across broader microbenchmarks, waiter overhead, PyTorch and retained HiSparse C1 on/off, followed by C4. Prior fusedRC1 waiter/PyTorch/model qualifications do not transfer to these bytes.
+
+
+## Unchanged confirmation — job 53419
+
+One node2 GPU, same exact source/harness/spec/runtime/workloads/protocol/order as the53362 expert/grouped matrix. No kernel, input, repetition, exclusion or timing change. Slurm completed0:0; remote and local audits pass all48 timing processes/9,728 rows/76 cells and six separate structural proofs. Spec SHA256 remains `c90d251e33bfbf5712aa1a43667d1c79d3057995f9a7e92cdad4c414b4f1ce3b`.
+
+| b64 balanced two-stream graph | Stock | Immutable parent | New omit off | New omit on |
+| --- | ---: | ---: | ---: | ---: |
+| GPU us | 110.583501 | 115.123749 | 114.464000 | 109.623499 |
+| Host us | 120.4750 | 124.8025 | 124.3025 | 119.2475 |
+| Submission us | 9.0925 | 9.0425 | 8.9675 | 8.4125 |
+
+Same-byte omission improves GPU4.23%, host4.07% and submission6.19%; all four rounds improve GPU3.49–4.31%. Against stock it is0.87% faster GPU and1.02% faster host, with all GPU rounds improving0.04–2.22% and host rounds neutral or better. This repeats the target's recovery without pooling the two allocations or replacing the first baseline.
+
+The isolated eager merge host cell is14.530us versus stock14.665us (−0.92%) and new-off14.5675us (−0.26%). Its earlier+4.51% host loss does not repeat above2% in any confirmation round. This resolves the need for one unchanged confirmation, not the attribution of that earlier variation; no gap investigation was performed.
+
+Across76 aggregate cells, omission-on has **zero GPU and total-host losses above2%** against stock or same-byte off. It has15 GPU/host wins above2% versus stock. Submission-only changes remain mixed:18 cells lose and28 win above2% versus stock; two lose and17 win versus off. Those metrics are retained and this is not a claim of universally lower CPU cost or statistical equivalence. The full stock screen, original first-allocation host result and all signed per-round values remain available.
+
+Raw: `iterations/hassan-qk-micro-20260918/covered-confirm-j53419`; exact source/spec reused from53362. `local-final-audit.json` binds the verifier, manifest and summary hashes. Hassan was not rerun in this confirmation; its50-process53362 comparison remains the current evidence. No runtime or package was promoted.
