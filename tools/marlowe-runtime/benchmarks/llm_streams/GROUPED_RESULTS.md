@@ -307,7 +307,9 @@ intervals in each of 12 trials and verified application/input fingerprints,
 rank receipts, six distinct startup identities per cohort, exact equality to
 six post-timing worker-map PIDs, and mapped HIP/HSA hashes. Slow trials above
 are retained; no multi-second-gap investigation was performed. The benchmark
-agent's separate final report is pending parser reconciliation.
+agent independently confirmed the same complete audit and medians; its final
+report is `c1-investigation/v9-interaction-20260918/RESULTS.md` in the combined
+optimizations workspace.
 
 Audit provenance: job 49839 stopped because its capture parser read only the
 first identity record on each line. Two complete JSON records can share a
