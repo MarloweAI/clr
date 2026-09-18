@@ -194,6 +194,17 @@ See [reverse-order confirmation](benchmarks/dispatch_cost/C1_CONFIRM_RESULTS.md)
 and [C1 calibration and its audit correction](benchmarks/dispatch_cost/C1_RESULTS.md). See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
 [duplicate suppression](benchmarks/dispatch_cost/DEDUP_RESULTS.md), and
 [packet/arrival evidence](benchmarks/dispatch_cost/PACKET_RESULTS.md).
+The combined graph/admission micro screen now improves grouped25 prefetch-on
+by 8.2%/7.3% over guarded at 32/64 layers, while preserving 96.1% of original
+waiter-excess removal and passing exact-byte PyTorch/lifecycle checks. An
+independent mixed-workload confirmation also exposes a repeatable 2.6% loss
+versus admission24 for parallel matrix-plus-KV graphs (about 1% versus stock).
+Global node-count ordering is therefore still a candidate with a tradeoff.
+The same-byte LONGPATH/SIDEWAIT split must resolve that attribution before
+advancing the bundled C1 grid. These results also require balancing the actual
+factorial cells; rotating unrelated baseline positions did not counterbalance
+those interventions. See [the graph policy evidence](benchmarks/dispatch_cost/GRAPH_POLICY_RESULTS.md).
+
 Do not deploy unconditional bypass; **a role classifier is not yet selected**.
 Candidate 2 can improve scheduling independently. Before candidate 3, validate
 completion-observation lag and sampling overhead; CPU timestamps are not wait-entry times.
