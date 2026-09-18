@@ -53,7 +53,16 @@ The b64-balanced two-stream total graph case remains3.293% slower than stock wit
 
 52255 completed Slurm0:0 in97seconds and passed its in-container live-library audit. The first offline checker compared integer round keys in memory to JSON string keys and stopped. A separate verifier normalizes only that serialization representation; the frozen runner, original manifests, audits, raw results and hashes remain unchanged. Remote and local saved-artifact audits then pass. No GPU rerun occurred for this checker defect.
 
-## Decision
+## Subsequent evidence
+
+The corrected-byte [C1](../graph_completion/FUSED_C1_RESULTS.md) and
+[C4](../graph_completion/FUSED_C4_RESULTS.md) comparisons have since passed their
+frozen bounds; the original stock micro screens still fail. A later
+[joint-publication diagnostic](ENTRY_JOINT_RESULTS.md) passed correctness/proof
+but did not improve the two-stream target. That candidate is rejected and the
+immutable fusedRC1 package remains unchanged.
+
+## Decision at the time of these allocations
 
 Do not add another micro heuristic or repeat this confirmation again. Preserve both failed stock screens and the exact candidate package. A diagnostic C1 on/off ABBA comparison against historical d3 is the next information needed to test whether this corrected package preserves the earlier model gain. It cannot isolate fusion alone: d3 differs in other code and lacks the generic launch-entry repair. It also cannot promote this package or waive the failed microbenchmarks. C4 follows only if C1 is promising.
 

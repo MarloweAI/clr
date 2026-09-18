@@ -22,6 +22,10 @@ passes the model screens but cannot waive the microbenchmark failures. The
 prefetch-on is 0.08–0.35% faster than d3, and off ranges from -0.23% to +0.04%.
 It is within 0.66–0.72% of the separate historical prefetch-on best. No further
 full-model rerun is needed without a new candidate or distinct unresolved concern.
+The subsequent [joint-entry publication probe](benchmarks/dispatch_cost/ENTRY_JOINT_RESULTS.md)
+is rejected: its target is +0.209% versus same-byte separate publication and
++3.756% versus stock. Correctness and actual mechanism coverage pass, but its
+performance screen fails. The tested fusedRC1 package is unchanged.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
@@ -56,6 +60,13 @@ passed192 checks and actual-emission proofs, but target GPU effects ranged from
 The architecture must preserve the necessary dependency; further work should
 address a distinct source of its latency instead of extending those parameter sweeps.
 
+Co-publishing the unchanged entry AND with the first kernel chunk also failed to
+recover the two-stream loss. The mechanism executed on all eight target frontiers
+in the untimed proof; ring-wrap and near-capacity reductions passed. Across52
+expert cells there is no >2% GPU/host improvement versus same-byte separate
+publication. Close this branch; a saved publication boundary does not explain
+the remaining measured gap. No further model run or confirmation is justified.
+
 A [clean stock-source comparison](benchmarks/dispatch_cost/ENTRY_BASELINE_RESULTS.md)
 now isolates the combined correctness-repair effect. Fresh stock plus only the
 entry and actual-tail repairs is4.52% slower than fresh vanilla on two-stream
@@ -65,7 +76,8 @@ against installed stock on the two-stream case. Vanilla rebuild differences stay
 below2% in every elapsed-time cell. This localizes the residual to work introduced
 by the required repairs, without proving its cost unavoidable or waiving the
 original stock screen. Four-stream gains against repaired stock include the entire
-fused runtime stack, not entry fusion alone. Broader and model gates remain open.
+fused runtime stack, not entry fusion alone. Later C1/C4 model screens pass;
+the original microbenchmark performance gates remain open.
 
 ## Stock architecture
 
