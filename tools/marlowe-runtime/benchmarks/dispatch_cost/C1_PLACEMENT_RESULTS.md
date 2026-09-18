@@ -78,7 +78,9 @@ factorials support this screen; this one allocation is not final qualification.
    not establish a fixed-graph mechanism for the measured gain.
 2. The existing trace0 natural-generation probes passed 12/12 across admission24
    and placement24, on/off. This is a limited retrieval screen. See [model checks](C1_MODEL_CHECKS.md).
-3. Test C4 after the model checks, using the existing retained client/protocol.
+3. C4 has now passed its retained screen: on improves about10% versus guarded,
+   off remains within0.16% of controls; about1% above the separate historical best.
+   See [C4 results and limits](C4_PLACEMENT_RESULTS.md).
 4. Port only the selected policy into a minimal default-off implementation,
    restricted to qualified single-device graphs. Keep the unconditional generic
    actual-tail fix. Remove rejected diagnostic policies and tracing machinery.

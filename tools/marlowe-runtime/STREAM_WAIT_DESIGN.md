@@ -13,7 +13,9 @@ This candidate retains **95.7–95.9% waiter-excess removal**, passes the comple
 microbenchmark gates, and reaches **15.23–15.26 ms/token** on HiSparse C1 prefetch-on:
 about 9% faster than admission24 alone and 15.4% faster than guarded256, with
 prefetch-off effectively neutral. It remains **2.3–2.4% above the historical best**
-of 14.897670 from a separate cohort. It is close, but not production-qualified.
+of 14.897670 from a separate cohort. C4 now reaches **17.95–17.98 ms/token**, about
+10% faster than guarded256 and within about1% of its separate historical best;
+off stays within0.16% of controls. It is close, but not production-qualified.
 
 ## Stock architecture
 
@@ -90,7 +92,7 @@ shader or infer firmware behavior from timings alone.
 | Strict admission24 | About 7% C1 prefetch-on gain; off neutral; held-out admission64 behaves as the proxy predicted | Retain |
 | Enqueue reordering alone | Near neutral on grouped25 | Do not include |
 | Successor-depth placement | Roughly 0.4% grouped loss, repeated across six rounds | Reject |
-| Node-count placement alone | Grouped25 improves roughly 4–5% in two allocations; C1 improves another 9% | Retain as empirical heuristic |
+| Node-count placement alone | Grouped25 improves roughly 4–5% in two allocations; C1 adds9%, C4 adds6.2% | Retain as empirical heuristic |
 | Placement plus enqueue reordering | Same maps as legacy, but mixed-workload timing sensitivity remains | Prefer placement alone |
 | Launch-stream-role prewait suppression | Grouped micro regressions around 5%, despite earlier model benefit | Reject global rule |
 | Marker omission | Model median effects dominated by retained variable trials; causal benefit unresolved | Do not include |
@@ -140,8 +142,10 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
    physical launch/side placement on all four ranks. Its planned exact cross-resident
    graph match failed because captures differ; the accepted proof is narrower and
    does not explain the magnitude of the C1 gain. See [model checks and limits](benchmarks/dispatch_cost/C1_MODEL_CHECKS.md).
-2. C4 is running with the retained client, six separately started residents and
-   forward/reverse order. Its performance gates remain pending.
+2. C4 passed all frozen screens across36 retained trials and36 identities/maps;
+   downloaded raw-data audit matched exactly. The corrected harness waits for
+   ordinary startup warmup to finish before controlled requests. See [C4 results
+   and node-context limits](benchmarks/dispatch_cost/C4_PLACEMENT_RESULTS.md).
 3. Port only the selected changes into a minimal implementation: cached stable
    assignment, baseline enqueue order, strict admission24, single-device qualification
    boundary, device-change invalidation and unconditional actual tails. The prepared
@@ -150,7 +154,7 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
    change history capacity, packet alignment/retirement or signal eligibility.
    Removing diagnostics also removes host work and an unused instruction word;
    those compiled differences require the new-byte performance bridge.
-4. Build and validate exact production-candidate bytes: rebuild/performance bridge,
+4. The minimal HIP library has built. Validate its exact candidate bytes: rebuild/performance bridge,
    required correctness checks and final model confirmation. Package an opt-in
    versioned HIP/HSA overlay with stock rollback. Only then qualify/deploy it.
 
