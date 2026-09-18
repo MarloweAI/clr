@@ -34,8 +34,11 @@ A subsequent [completed-start diagnostic](benchmarks/dispatch_cost/ENTRY_SEALED_
 keeps runtime bytes and graph bodies fixed. Completing the begin event before launch
 reduces the KV relative host penalty from 3.16% to 0.08% versus stock, while expert
 penalties persist. This points to frontier/scheduling state, not a sufficient runtime
-fix. The next discriminator observes hardware readiness separately from CPU status
-before deciding whether a completed-frontier fast path is worthwhile.
+fix. The subsequent [untimed readiness observations](benchmarks/dispatch_cost/ENTRY_FRONTIER_RESULTS.md)
+find 0/256 original frontiers ready and 256/256 completed-start controls ready, all
+with pending CPU status. A completed-frontier shortcut has no observed opportunity
+at this sampled point. The next architecture review concerns pending entry
+dependencies, while preserving their full synchronization contract.
 
 ## Stock architecture
 
