@@ -42,6 +42,17 @@ passed192 checks and actual-emission proofs, but target GPU effects ranged from
 The architecture must preserve the necessary dependency; further work should
 address a distinct source of its latency instead of extending those parameter sweeps.
 
+A [clean stock-source comparison](benchmarks/dispatch_cost/ENTRY_BASELINE_RESULTS.md)
+now isolates the combined correctness-repair effect. Fresh stock plus only the
+entry and actual-tail repairs is4.52% slower than fresh vanilla on two-stream
+experts; fused is0.24% faster than repaired stock. Fused has no>2% GPU/host loss
+against that correct comparator across172 expert/KV cells, but still loses3.44%
+against installed stock on the two-stream case. Vanilla rebuild differences stay
+below2% in every elapsed-time cell. This localizes the residual to work introduced
+by the required repairs, without proving its cost unavoidable or waiving the
+original stock screen. Four-stream gains against repaired stock include the entire
+fused runtime stack, not entry fusion alone. Broader and model gates remain open.
+
 ## Stock architecture
 
 ```mermaid
