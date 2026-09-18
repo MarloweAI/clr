@@ -54,6 +54,13 @@ Waiter overhead removal remains95.83%. This is a useful architectural direction,
 but the two-stream expert case still loses3.42% to stock and four expert targets
 lose4.37–5.83% to historical d3. Source/package qualification and the model bridge
 remain held. Preserve the required dependency while isolating its residual cost.
+The [first-kernel release discriminator](benchmarks/dispatch_cost/ENTRY_SCOPE_RESULTS.md)
+then preserved captured AGENT release while retaining SYSTEM acquire. All192
+correctness/failure checks and exact scope proofs passed, but target effects
+were only-0.36% to+0.63%. Do not add that change. WaitingSignal already skips
+completed hardware dependencies at consumption; another ready-signal shortcut
+would duplicate existing behavior. Next isolate pending-start sensitivity of
+immutable fused bytes using the existing completed-start measurement control.
 
 ## Stock architecture
 
