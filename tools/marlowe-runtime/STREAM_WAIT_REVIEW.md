@@ -250,3 +250,12 @@ fixed ordering+side-policy bundle, with a default rebuild bridge. Measure the
 interaction in ms/token; scheduling changes arrival, backlog and queue placement,
 so separate implementation changes need not have additive benefits. That grid
 attributes the bundle, not its individual ordering and side-policy components.
+
+## Fresh review of the residual two-stream regression
+
+A later user-authorized Fable xhigh review completed successfully in269.691s on
+2026-09-18. It challenges the priority of another allocator optimization and
+recommends separating entry/tail repairs and localizing the GPU critical path.
+[Our assessment](benchmarks/dispatch_cost/FABLE_RESIDUAL_REVIEW.md) records the
+changed plan, source corrections to the review, profiler-path limitations and the
+new Hassan workload requirement. The allocator candidate remains unbuilt/unrun.
