@@ -1440,6 +1440,35 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
     // Assign streams to segments at this level
     AssignStreamsToSegments(segments_at_level, launch_stream, streams, segment_to_stream);
 
+    // Graph roots must follow work already queued on the application launch
+    // stream, including copies and memory initialization outside this graph.
+    // Snapshot that frontier before any graph packets, then fork to each distinct
+    // logical side stream. Single-root/all-launch-stream graphs need no fork.
+    if (level == 0 && segments_at_level.size() > 1 &&
+        std::any_of(segments_at_level.begin(), segments_at_level.end(),
+                    [&](int id) { return segment_to_stream.at(id) != launch_stream; })) {
+      constexpr bool kRetainCommand = true;
+      auto predecessor = launch_stream->getLastQueuedCommand(kRetainCommand);
+      if (predecessor != nullptr) {
+        amd::Command::EventWaitList entry_wait_list{predecessor};
+        for (int id : segments_at_level) {
+          auto stream = segment_to_stream.at(id);
+          // Reuse the tail map to deduplicate root streams; actual enqueues below
+          // replace these null placeholders with the owning segment's command.
+          bool first_root = stream_last_command_map.emplace(stream, nullptr).second;
+          if (stream != launch_stream && first_root) {
+            // Use ordinary marker fence/cache scope, as the classic graph fork
+            // does. External producers cannot assume kCacheStateIgnore.
+            auto marker = new amd::Marker(*stream, true, entry_wait_list);
+            marker->enqueue();
+            marker->release();
+          }
+        }
+        // Every enqueued marker owns its dependency reference now.
+        predecessor->release();
+      }
+    }
+
     // Process each segment at this level
     for (int segment_id : segments_at_level) {
       const auto& segment = segments_[segment_id];

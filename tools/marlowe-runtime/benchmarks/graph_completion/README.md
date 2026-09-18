@@ -71,3 +71,29 @@ All raw data and strict audits are preserved in iteration
 `stream-wait-calibration-20260918`, roots `graph-placement-terminal-j51007`,
 `graph-tail-gate-j51020`, `graph-tail-terminal-j51026`, and
 `graph-tail-checks-j51046`. Runtime production qualification remains false.
+
+## Launch-entry ordering
+
+`graph_entry_ordering.cpp` tests the other boundary: graph roots must follow work
+already enqueued on the launch stream. Four independent chains increment one
+counter45 times after a delayed launch-stream reset. It records both the observation
+at launch-stream synchronization and the post-drain value. Its synchronized-prefix
+control changes only whether that initialization is drained before launching.
+
+Job51635 reproduced the missing entry dependency in stock HIPf1043337, diagnostic
+HIPd3b22a and the first minimal candidate HIP644dc04d. All4 asynchronous trials per
+state yielded8/45 with baseline placement or16/45 with node-count placement,
+matching the launch-stream chain length. All synchronized-prefix controls returned
+45/45. Draining after the failed observation did not recover overwritten increments.
+Earlier terminal/lifecycle fixtures synchronized initialization, so did not cover
+this boundary. This defect is shared by stock and the diagnostic, not introduced
+by the minimal port.
+
+The generic repair snapshots the launch predecessor before graph packets and adds
+ordinary dependency markers to distinct logical side-root streams. It preserves
+normal fence/cache scope rather than assuming external copies need no cache action.
+Single-root/all-launch-stream graphs need no fork. Final-tail ownership is unchanged.
+The corrected minimal candidate HIP986f1c50 passed all96 entry rows at caps1/4/8
+across optimization-off, native-only, placement-only and combined profiles in
+job51652, as well as the original async-memset fixture. This is correctness evidence;
+the added marker cost still requires the new-byte performance bridge.
