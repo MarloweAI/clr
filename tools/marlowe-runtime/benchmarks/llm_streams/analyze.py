@@ -19,6 +19,8 @@ def expected(key, components):
     bench, config, schedule, submission = key
     def component(phase, path='isolated'):
         return components[(bench,config,path,phase,submission)]
+    if bench=='grouped_prefetch':
+        return None  # Dependency probe; no isolated-stage performance model.
     if bench=='attention_fetch':
         path,kind=schedule.split('-'); copy=component('copy',path); resident=component('resident',path)
         missed=component('miss_attention',path); merge=component('merge',path)
@@ -77,7 +79,7 @@ def main():
     with (root/'totals.csv').open('w') as f:
         writer=csv.DictWriter(f,fieldnames=list(report[0]));writer.writeheader();writer.writerows(report)
     print(f"{out['processes']} processes; {out['rows']} timings; {len(report)} total rows")
-    print('graph totals: stock / v8 off / v8 on / experimental / ideal us; v8 vs stock, experimental %')
+    print('graph totals: stock / candidate off / candidate on / experimental / ideal us; candidate vs stock, experimental %')
     for row in report:
         if row['submission']!='graph': continue
         times=' / '.join(f'{row[m+"_us"]:.1f}' for m in ('stock','off','on','experimental'))

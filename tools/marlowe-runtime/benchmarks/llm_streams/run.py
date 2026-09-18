@@ -21,6 +21,7 @@ def main():
     p.add_argument('--output', type=pathlib.Path, required=True)
     p.add_argument('--rounds', type=int, default=3)
     p.add_argument('--trials', type=int, default=12)
+    p.add_argument('--cases', nargs='+', choices=CASES + ('grouped_prefetch',), default=CASES)
     args = p.parse_args()
     assert os.environ.get('SLURM_JOB_ID'), 'must run inside allocation'
     assert args.rounds >= 3 and args.trials >= 4
@@ -46,7 +47,7 @@ def main():
     for round_index in range(args.rounds):
         order = modes[round_index % len(modes):] + modes[:round_index % len(modes)]
         for mode in order:
-            for case in CASES:
+            for case in args.cases:
                 tag = f'r{round_index}-{mode}-{case}'
                 env = os.environ.copy()
                 for key in list(env):

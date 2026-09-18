@@ -5,6 +5,7 @@
 #include "experts.hpp"
 #include "mixed.hpp"
 #include "pipeline.hpp"
+#include "grouped_prefetch.hpp"
 int main(int argc, char** argv) {
   require(argc == 2 && getenv("SLURM_JOB_ID"), "usage inside allocation: llm_streams CASE");
   Context context;
@@ -16,6 +17,8 @@ int main(int argc, char** argv) {
     benchmark_attention_fetch(context);
   else if (name == "pipeline")
     benchmark_pipeline(context);
+  else if (name == "grouped_prefetch")
+    benchmark_grouped_prefetch(context);
   else if (name == "experts")
     benchmark_experts(context);
   else if (name == "mixed")
