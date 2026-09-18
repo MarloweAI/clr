@@ -1633,7 +1633,28 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
   amd::ScopedLock lock(execution());
   profilingBegin(*vcmd);
 
-  dispatchBlockingWait();
+  auto entry_event = vcmd->pendingGraphEntryEvent();
+  if (entry_event != nullptr) {
+    // profilingBegin clears previous external signals; import this one-shot
+    // dependency afterward. Its command remains owned by vcmd until retirement.
+    void* hw_event = entry_event->NotifyEvent() != nullptr
+        ? entry_event->NotifyEvent()->HwEvent() : entry_event->HwEvent();
+    if (hw_event == nullptr) {
+      profilingEnd();
+      return false;  // Materialization was required before graph submission.
+    }
+    Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
+    auto producer = entry_event->command().queue();
+    if (producer != nullptr && producer != vcmd->queue() &&
+        producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
+      setFenceDirty(true);
+    }
+  }
+  dispatchBlockingWait();  // Keep ordinary min24 admission and AQL dependency.
+  if (entry_event != nullptr) {
+    addSystemScope();  // SYSTEM acquire on the first actual kernel packet.
+    vcmd->consumeGraphEntryEvent();  // Ownership is deliberately not consumed.
+  }
 
   // Add all kernel names in bulk
   vcmd->setKernelNamesRef(&kernelNames);
@@ -1645,7 +1666,6 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
   bool result = dispatchGenericAqlPacketBatch(aqlPackets, false, false, &kernelNames);
 
   profilingEnd();
-
   return result;
 }
 

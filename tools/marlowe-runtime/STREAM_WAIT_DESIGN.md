@@ -1,8 +1,11 @@
 # Stream scheduling and native-wait admission
 
-Current status, 2026-09-18: **no production package is qualified**. The minimal
-RC2 package passes correctness and removes96.016% of waiter excess, but fails the
-unchanged microbenchmark performance screens. The best measured architectural
+Current status, 2026-09-18: **no production package is qualified**. The new minimal
+[fused RC1 candidate](benchmarks/graph_completion/FUSED_RC1_CHECKS.md) passes 120
+single-GPU correctness processes and two two-device checks, including PyTorch.
+Its exact-byte broad performance bridge is next. The earlier minimal RC2 removed
+96.016% of waiter excess but failed the unchanged microbenchmark screens.
+The best measured architectural
 improvement is [fused first-batch entry](benchmarks/dispatch_cost/ENTRY_FUSED_RESULTS.md):
 it retains95.83% waiter excess removal and improves small KV by1.20% and balanced
 four-stream experts by2.37–3.15% relative to same-byte lazy markers. However,
@@ -213,17 +216,20 @@ fixed and qualified. See [completion coverage](benchmarks/graph_completion/READM
    bridge completed and failed the frozen loss screens. Preserve this result and
    isolate the remaining cost before selecting another minimal candidate. Any
    changed candidate needs exact-byte correctness, microbenchmark qualification
-   and final model confirmation. Only then package and qualify an opt-in HIP/HSA
-   overlay with stock rollback.
+   and final model confirmation. The minimal fused port now passes 120 single-GPU
+   and two two-device correctness processes on HIP1de1c55a. Its broad performance
+   screens remain pending. Packaging an unqualified candidate for these checks
+   does not authorize deployment; qualification and stock rollback remain required.
 
 The generic tail fix is in PR1 commit b36e37b, and the generic entry repair is
-commit d862ffe. The current PR source now includes the minimal opt-in admission24
-and flat single-device placement policy. Corrected qualification package
-`marlowe-hip-7.2.4-placement-rc2` is HIP986f1c50 / HSA b8cdfe; the earlier measured
-`graph-tail-diagnostic1` package remains HIPd3b22a. The minimal package remains
-unqualified for production after its failed performance bridge. The release lock
-is unchanged. The latest diagnostics remain isolated from the proposed production
-source; none has been promoted.
+commit d862ffe. Current PR source includes the minimal opt-in admission24 and
+flat single-device placement policy, plus automatic first-batch integration of
+qualified entry dependencies. Candidate `marlowe-hip-7.2.4-fused-rc1` is
+HIP1de1c55a / HSA b8cdfe; it has passed correctness but awaits broad performance
+and model evidence. Earlier RC2 is HIP986f1c50, fused diagnostic51980 is
+HIPbf7ab372, and historical d3 is HIPd3b22a. The release lock remains unchanged.
+No diagnostic CPU-poll, vendor-value, observation, entry-mode or fault control
+was added to the production-shaped port.
 
 Source: [admission policy](NATIVE_WAIT_POLICY.md),
 [wait and packet submission](../../rocclr/device/rocm/rocvirtual.cpp),

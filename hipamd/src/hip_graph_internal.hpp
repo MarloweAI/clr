@@ -715,6 +715,9 @@ class Graph {
     if (assignment_device_id_ >= 0 && assignment_device_id_ != device_id) {
       assignment_device_id_ = -1;
     }
+    if (entry_fused_device_id_ >= 0 && entry_fused_device_id_ != device_id) {
+      entry_fused_device_id_ = -1;
+    }
   }
 
 
@@ -849,6 +852,7 @@ class Graph {
   //!< Cached assignment only; segments_per_level_ retains the enqueue order.
   std::unordered_map<int, std::vector<int>> assignment_segments_per_level_;
   int assignment_device_id_ = -1;
+  int entry_fused_device_id_ = -1;  // Cached flat kernel-only eligibility.
 
 
   std::unordered_map<Node, Node> clonedNodes_;
