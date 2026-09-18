@@ -284,3 +284,16 @@ BOTH remains timing-sensitive despite matching legacy maps. Advance placement-on
 to the original waiter/attention/queued and small-transfer holdouts; keep the C1
 claim unchanged until matched model measurements exist. See
 [the corrected factorial and confirmation](benchmarks/dispatch_cost/GRAPH_PLACEMENT_RESULTS.md).
+
+
+### Broad gate passed; scheduling transfer remains a model prediction
+
+Exact corrected bytes now retain 95.87% and 95.72% waiter-excess removal in two
+allocations. Queued/fanout, grouped4 and small-KV transfer holdouts have no >2%
+aggregate loss versus stock, guarded256 or admission24. Initial noisy attention
+losses did not recur in an independent unchanged full attention sweep. These
+holdouts have no changed placement positions, so they extend admission/overhead
+coverage rather than active-placement topology coverage. The existing grouped25
+factorial supplies active-placement evidence. A forward/reverse retained C1 screen
+is now running; no new HiSparse gain is claimed yet. See
+[all holdout results and retained limits](benchmarks/dispatch_cost/GRAPH_TAIL_HOLDOUT_RESULTS.md).
