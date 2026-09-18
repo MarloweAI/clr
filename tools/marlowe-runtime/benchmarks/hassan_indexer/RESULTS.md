@@ -48,3 +48,5 @@ The private diagnostic runner only generalizes treatment labels/comparison terms
 [Timestamp calibration and resource report](TIMESTAMP_RESULTS.md) records a repeatable scheduling difference in the instrumented 200-replay burst: stock K runs ahead across invocations, whereas current Q/K remain aligned. Probe overhead is measurable and runtime-dependent; this does not quantitatively explain the original gap or transfer to the expert single-replay benchmark. The unchanged original kernels still regress in the new matched comparison.
 
 [Physical queue-cap control](QUEUE_CAP_RESULTS.md) rejects cap1 as a remedy: it retains two logical streams and worsens current graph replay from22.16 to31.65us. A separate logical-stream mapping diagnostic is required to test whether removing unnecessary graph dependencies helps.
+
+[Logical-stream coalescing diagnostic](LOGICAL_COALESCE_RESULTS.md) recovers most of the regression: original-kernel graph replay20.262us versus current parent22.148us and stock19.914us. It still fails the all-round2% gate and has update/device-fallback issues to address before broader qualification. No runtime is promoted.
