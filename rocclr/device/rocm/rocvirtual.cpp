@@ -1263,7 +1263,7 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
             static_cast<unsigned long long>(threshold_index),
             static_cast<unsigned long long>(read_index));
   }
-  // The recorded index is the oldest of 256 actual kernels, regardless of gaps.
+  // The recorded index is the oldest of the required actual kernels, regardless of gaps.
   // Rechecking this exact index cannot count intervening non-kernel packets or
   // mistake a drained kernel history for currently outstanding work.
   if (read_index > threshold_index) return;
@@ -1633,7 +1633,61 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
   amd::ScopedLock lock(execution());
   profilingBegin(*vcmd);
 
-  dispatchBlockingWait();
+  const auto& graph_dependencies = vcmd->graphDependencies();
+  const size_t dependency_begin = vcmd->graphDependencyBegin();
+  // Notification/materialization happened outside this consumer lock. Check all
+  // inputs before adding any tracker state, so the error path has no partial import.
+  for (size_t i = dependency_begin; i < graph_dependencies.size(); ++i) {
+    auto* event = graph_dependencies[i];
+    void* hw_event = event->NotifyEvent() != nullptr
+        ? event->NotifyEvent()->HwEvent() : event->HwEvent();
+    if (hw_event == nullptr && event->status() != CL_COMPLETE) {
+      profilingEnd();
+      return false;
+    }
+  }
+  auto entry_event = vcmd->pendingGraphEntryEvent();
+  if (entry_event != nullptr) {
+    // profilingBegin clears previous external signals; import this one-shot
+    // dependency afterward. Its command remains owned by vcmd until retirement.
+    void* hw_event = entry_event->NotifyEvent() != nullptr
+        ? entry_event->NotifyEvent()->HwEvent() : entry_event->HwEvent();
+    if (hw_event == nullptr) {
+      profilingEnd();
+      return false;  // Materialization was required before graph submission.
+    }
+    Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
+    auto producer = entry_event->command().queue();
+    if (producer != nullptr && producer != vcmd->queue() &&
+        producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
+      setFenceDirty(true);
+    }
+  }
+  for (size_t i = dependency_begin; i < graph_dependencies.size(); ++i) {
+    auto* event = graph_dependencies[i];
+    void* hw_event = event->NotifyEvent() != nullptr
+        ? event->NotifyEvent()->HwEvent() : event->HwEvent();
+    if (hw_event != nullptr) {
+      Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
+    }
+    auto* producer = event->command().queue();
+    if (producer != nullptr && producer != vcmd->queue() &&
+        producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
+      setFenceDirty(true);
+    }
+  }
+  dispatchBlockingWait();  // Keep ordinary min24 admission and AQL dependencies.
+  vcmd->consumeGraphDependencies();
+  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && dependency_begin < graph_dependencies.size()) {
+    fprintf(stderr, "GRAPH_BATCH_DEPENDENCIES command=%p physical=%llu events=%zu\n",
+            static_cast<void*>(vcmd),
+            static_cast<unsigned long long>(gpu_queue_->id),
+            graph_dependencies.size() - dependency_begin);
+  }
+  if (entry_event != nullptr) {
+    addSystemScope();  // SYSTEM acquire on the first actual kernel packet.
+    vcmd->consumeGraphEntryEvent();  // Ownership is deliberately not consumed.
+  }
 
   // Add all kernel names in bulk
   vcmd->setKernelNamesRef(&kernelNames);
@@ -1645,7 +1699,6 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
   bool result = dispatchGenericAqlPacketBatch(aqlPackets, false, false, &kernelNames);
 
   profilingEnd();
-
   return result;
 }
 

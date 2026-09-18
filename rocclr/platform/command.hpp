@@ -1394,6 +1394,13 @@ class AccumulateCommand : public Command {
   //! Kernel names and timestamps list for activity profiling
   std::vector<std::string> kernelNames_;
   const std::vector<std::string>* kernelNamesRef_ = nullptr;
+  // Separate from eventWaitList: import only once, retain through GPU retirement.
+  Event* graph_entry_event_ = nullptr;
+  bool graph_entry_pending_ = false;
+  // Graph-internal waits are imported once at the next captured batch. Keep
+  // their command references through the consumer region's GPU retirement.
+  EventWaitList graph_dependencies_;
+  size_t graph_dependency_begin_ = 0;
   std::vector<std::pair<uint64_t, uint64_t>> tsList_;
 
  public:
@@ -1401,6 +1408,37 @@ class AccumulateCommand : public Command {
   AccumulateCommand(HostQueue& queue, const EventWaitList& eventWaitList = nullWaitList,
                     const Event* waitingEvent = nullptr)
       : Command(queue, CL_COMMAND_TASK, eventWaitList, 0, waitingEvent) {}
+
+  void setGraphEntryEvent(Event* event) {
+    assert(graph_entry_event_ == nullptr && event != nullptr);
+    event->retain();
+    graph_entry_event_ = event;
+    graph_entry_pending_ = true;
+  }
+  Event* pendingGraphEntryEvent() const {
+    return graph_entry_pending_ ? graph_entry_event_ : nullptr;
+  }
+  void consumeGraphEntryEvent() { graph_entry_pending_ = false; }
+  void appendGraphDependencies(const EventWaitList& events) {
+    assert(graph_dependency_begin_ == graph_dependencies_.size());
+    for (auto* event : events) {
+      event->retain();
+      graph_dependencies_.push_back(event);
+    }
+  }
+  const EventWaitList& graphDependencies() const { return graph_dependencies_; }
+  size_t graphDependencyBegin() const { return graph_dependency_begin_; }
+  void consumeGraphDependencies() { graph_dependency_begin_ = graph_dependencies_.size(); }
+  void releaseResources() override {
+    if (graph_entry_event_ != nullptr) {
+      graph_entry_event_->release();
+      graph_entry_event_ = nullptr;
+    }
+    for (auto* event : graph_dependencies_) event->release();
+    graph_dependencies_.clear();
+    graph_dependency_begin_ = 0;
+    Command::releaseResources();
+  }
 
   //! Add kernel name to the list if available
   void addKernelName(const std::string& kernelName) { kernelNames_.push_back(kernelName); }

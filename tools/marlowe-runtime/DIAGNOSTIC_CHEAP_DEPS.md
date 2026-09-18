@@ -1,0 +1,9 @@
+# Structural dependency/final completion fusion — diagnostic only
+
+Two independently default-off flags: GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS imports retained internal graph dependencies into the next eligible captured batch while preserving the actual AQL wait; GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL folds the top-level side-tail join into the pre-registered graph-release completion marker. Failed prefixes and child paths keep the ordinary immediate join. No coalescing, kernel-shape selection or timing threshold is added.
+
+Exact tested build uses base cab5670a350678f2b0a6feb388fcbbca56c426a1 plus full.patch a7b04c7d9ad46330ed74221ad09cffe3cf93dc205174cf7e7599620c66f41c0c. HIP SHA256102cf658a8cbe7f02f36a85a9f9dbdb344b3cbb23be1b1b0141d6ce93214597c; HSA b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4. This commit records the source contents after the build; rebuilding at this commit can change version metadata and does not reproduce the byte hash automatically.
+
+54155 passed numerical/semantic execution but failed its intended group50 path assertion: the inherited >=16-segment/average<8 stock heuristic selects classic execution, making B/T no-ops there. Its separate posthoc observed-path audit explicitly reports original qualification false. Group1 final fusion improves same-byte21.526→17.605µs but still loses to stock14.124µs; no candidate is qualified. Explicit same-byte scheduler-factor follow-up54192 exercises forced segmented scheduling2 and requires non-vacuous two-physical-queue/dependency/final-fusion proofs before timing.
+
+Full source/build/harness/raw reports: /home/sashawork/dev/amd-runtime-production/iterations/hassan-cheap-dependencies-20260918 and hassan-segmented-control-20260918; remote mirrors under /workspace/home/sasha/amd-runtime-production/iterations/. Main PR1 runtime has not been switched to these diagnostic defaults.
