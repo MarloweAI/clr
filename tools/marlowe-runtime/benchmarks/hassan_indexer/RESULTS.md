@@ -27,3 +27,18 @@ The scheduler is copied unchanged from Hassan's pinned repository. Tensor shapes
 Frozen spec SHA256: `6ddfd7171b7cb3291db517955440d22ca4c3e2013622e105e5bfa9d31c22891b`.
 Frozen source and raw data: `iterations/hassan-qk-micro-20260918/bench`, `spec.json`, `results-j52868`.
 `passed` in the saved summary denotes the data audit; the separate `performance_screen.passed` is false. All trials are retained. No runtime is promoted.
+
+## Same-byte native/placement attribution — job 52887
+
+The exact same benchmark and cab16 runtime were tested with native wait and node-count placement toggled independently, events schedule throughout. All16processes/256timingrows/320checks passed local and independent artifact/identity/correctness audit.
+
+| Native wait | Placement | Graph GPU us | Graph host us |
+| --- | --- | ---: | ---: |
+| Off | Off | 22.134085 | 22.175755 |
+| Off | On | 22.116285 | 22.158493 |
+| On | Off | 22.136234 | 22.177230 |
+| On | On | 22.148484 | 22.191668 |
+
+Aggregate GPU spread is0.0322us; every registered graph contrast stays below0.63% absolute in every round. Neither toggle removes the22.1us behavior. Both-off retains candidate-common code and enabled selective-spare controls; it is not stock. This run has no contemporaneous stock arm and does not independently establish the stock gap or attribute it to either correctness repair. Permission to emit native waits does not prove actual native emission.
+
+The private diagnostic runner only generalizes treatment labels/comparison terms; benchmark.py is byte-identical to52868. Data and external-source identities match. Frozen spec `2825f05a2bd700e1fcf5ce0a7cf684611f22dbafad2cee0c8563da8c0a6d0336`; raw `iterations/hassan-qk-micro-20260918/controls-j52887`. No performance qualification is claimed.

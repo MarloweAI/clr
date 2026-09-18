@@ -80,3 +80,15 @@ dispatch choices, event edges and measurement scope. Add exact runtime/control
 identity checks and separate untimed mechanism observations without tuning its
 workload. A current-runtime regression there remains a required unresolved gate,
 even if the existing expert and grouped families pass.
+
+## Follow-up after repair isolation and Hassan results
+
+A fresh Fable xhigh review completed in356.661s after52829, followed by a386.414s correction round after the new Hassan data. Both returned successfully. Raw prompts/responses live in `iterations/stream-wait-fable-factorial-20260918`.
+
+The first response incorrectly explained the expert loss by overlap between successive replays. Source `llm_streams/common.hpp::time_once` synchronizes the device before every measured sample, launches one graph and synchronizes its end event. That premise is incompatible with the experiment. The correction round explicitly withdrew it. We also reject its suggestion to accept the loss as a correctness price; the user's goal remains neutral/positive while correct.
+
+The surviving hypotheses are a pending-frontier handoff delay, producer notification/publication delay, and kernel stretch under changed arrival/overlap. They are hypotheses, not observed GPU stalls. Similar host/GPU deltas or small total submission changes cannot exclude host-induced packet-arrival effects. The existing52028 result rejects the extra first-kernel release as a useful optimization; it did not test every possible acquire/fence effect.
+
+Hassan's captured graph is now structurally observed in52935: four kernel nodes, main segment containing two small PyTorch integer-fill kernels followed by Q, side segment containing K; distinct physical queues, flat-kernel eligibility. There is no measured physical-overlap result yet. The failed52906 observation exported no DOT because the original graph was not retained;52935 explicitly retains it and calls HIP's graph export API, with no performance claim from either observation.
+
+Next, measure device execution intervals in diagnostic copies of the same kernels and qualify instrumentation against the unchanged performance gate. Track per-block spans, start skew, overlap, initialization work and the residual boundary/completion interval. Preserve the original benchmark/data/runtime identities and check register/LDS/resource changes before treating instrumentation as transparent. External profilers are also interventions: qualifying path and packet behavior is required before using their results to explain the unprofiled fast path. Profiling a different path can supply structural evidence, not a confirmed cause for production latency.
