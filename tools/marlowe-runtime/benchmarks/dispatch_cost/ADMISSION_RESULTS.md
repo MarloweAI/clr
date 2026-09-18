@@ -86,7 +86,8 @@ The first model comparison is now complete: [job50519](C1_RESULTS.md) supports t
 prefetch-on direction (6.75% improvement) while prefetch-off is almost unchanged.
 The corrected offline audit passes all18 timings/identities/maps after accounting
 for the unchanged child-only platform setting. Fixed resident order limits causal
-interpretation; independent confirmation and the model64 prediction remain.
+interpretation; the fresh reverse-order confirmation and model64 test below
+now address that limitation without pooling token intervals across residents.
 
 ## Model-held-out threshold64 micro screen — job50589
 
@@ -112,8 +113,13 @@ microbenchmark. Before any model64 trial, the next job's prediction was frozen:
 since the prior micro off gain did not transfer measurably. These are practical
 screening bands, not confidence intervals; no token-interval pseudo-replication.
 
-Model job50613 runs relaxed→24→64→guarded, three alternating on/off cases per
-resident, in a fresh node2 TP4 allocation. It reverses the original three-mode
-relative order. A materially positive64 result matching24 would reject the
-proxy's proposed distinction in admission opportunities. No model64 result is
-implied here. Raw micro audit and CSVs: holdout64-j50589 in the iteration root.
+Model [job50613](C1_CONFIRM_RESULTS.md) completed in a fresh node2 TP4 allocation,
+with relaxed→24→64→guarded reversing the original three-mode relative order.
+All 24 retained trials, identities, maps and control receipts passed. Prefetch-on
+medians: guarded 18.034738, threshold24 16.766149, threshold64 17.980001 ms/token.
+Threshold24 repeats a 7.03% gain; threshold64 stays within 0.30% of guarded and
+is 7.24% slower than threshold24. Prefetch-off remains within 0.1% of guarded.
+All frozen prediction bands passed. The proxy successfully distinguishes this
+held-out intervention; it does not establish universal workload coverage or
+predict exact ms/token. Raw micro audit and CSVs: holdout64-j50589; model evidence:
+c1-model-j50613 in the iteration root.

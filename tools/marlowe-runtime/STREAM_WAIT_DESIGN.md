@@ -180,9 +180,18 @@ holdouts now favor threshold 24: it protects the short joins and improves groupe
 prefetch while retaining the original waiter/fanout benefit. Exact-byte lifecycle
 and PyTorch checks passed. First matched C1 calibration now improves prefetch-on 17.971→16.759 ms/token
 (6.75%) at threshold24, with prefetch-off nearly unchanged (15.042→15.053). Each
-mode has one resident in a fixed order; reverse-order confirmation and the
-model-held-out threshold64 prediction remain. This is not production qualification.
-See [C1 calibration and its audit correction](benchmarks/dispatch_cost/C1_RESULTS.md). See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
+mode had one resident in a fixed order. A fresh allocation reversed that relative
+order and confirmed a 7.03% prefetch-on gain (18.035→16.766 ms/token), with
+prefetch-off +0.08%. The held-out threshold64 prediction also passed: its
+prefetch-on result stayed near guarded and was 7.24% slower than threshold24.
+The unchanged micro now predicts one held-out admission intervention in this
+workload family; it is not a universal model proxy or an exact scaling model.
+Current C1 remains 12.54% above the separate historical 14.897670 ms/token best.
+Next test guard256/24 × default/(node-count ordering + interior marker policy)
+on identical new bytes, with prior-byte bridges and unchanged micro holdouts.
+No marker omission or unrestricted bypass. This is not production qualification.
+See [reverse-order confirmation](benchmarks/dispatch_cost/C1_CONFIRM_RESULTS.md)
+and [C1 calibration and its audit correction](benchmarks/dispatch_cost/C1_RESULTS.md). See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
 [duplicate suppression](benchmarks/dispatch_cost/DEDUP_RESULTS.md), and
 [packet/arrival evidence](benchmarks/dispatch_cost/PACKET_RESULTS.md).
 Do not deploy unconditional bypass; **a role classifier is not yet selected**.
