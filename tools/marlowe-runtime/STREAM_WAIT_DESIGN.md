@@ -272,3 +272,15 @@ command ownership and dependency packets.768 corrected completion observations
 and75 framework/lifecycle checks passed on diagnostic bytes. This generic fix is
 now in the PR source; no new release is implied. See
 [completion evidence and coverage](benchmarks/graph_completion/README.md).
+
+
+### Placement alone is the current performance candidate
+
+The completed assignment×enqueue factorial and independent confirmation now retain
+roughly 4–5% grouped prefetch-on gains using length-based placement with baseline
+submission order. Enqueue-only is neutral and depth ranking was rejected. The
+placement-only mixed/skewed-expert confirmation has no >2% aggregate loss, while
+BOTH remains timing-sensitive despite matching legacy maps. Advance placement-only
+to the original waiter/attention/queued and small-transfer holdouts; keep the C1
+claim unchanged until matched model measurements exist. See
+[the corrected factorial and confirmation](benchmarks/dispatch_cost/GRAPH_PLACEMENT_RESULTS.md).
