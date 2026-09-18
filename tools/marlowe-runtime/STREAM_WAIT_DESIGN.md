@@ -39,7 +39,12 @@ placement need a joint policy. The two-stream expert penalty is unchanged. The
 confirms placement with the spare reduces grouped L32/L64 by1.31/1.07% and keeps
 the four-stream expert gains. Placement/S1 has zero >2% GPU/host regressions
 across76cells, but L64 submission loses5.59%; no contemporaneous stock arm was
-included in that grid. A conservative qualified-spare boundary is under review.
+included in that grid. The [qualified-spare diagnostic](benchmarks/dispatch_cost/QUALIFIED_SPARE_RESULTS.md)
+then recovers both grouped losses to within0.02% of stock GPU, retaining15–32%
+four-stream expert stock gains. Its76-cell flags-off screen has no >2%GPU/host
+loss versus same-byte legacy; balanced two-stream remains4.18% slower than stock.
+New-byte broad/on-path/shared-pool qualification remains open; runtime promotion
+and model reruns are held.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
