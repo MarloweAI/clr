@@ -209,8 +209,12 @@ receipts must prove placement equivalence and actual ordering changes. The bundl
 C1 grid remains deferred. Completed50925 confirms that enqueue-only priority
 preserves placement but loses the grouped benefit (roughly0% change); coupled
 priority retains4.1–4.7% gains. Traced submission sequences match, so placement
-matters to that gain. The mixed result remains noisy. Next review dependency-aware
-placement rather than promoting the neutral enqueue-only candidate. See
+matters to that gain. The mixed result remains noisy. The dependency-depth placement test then reduced cross-stream edges but failed
+its frozen prediction: grouped prefetch-on is0.37–0.44% slower in all six rounds.
+Reject it. Next complete the placement×enqueue factorial with length-based
+placement alone; keep baseline enqueue order and all interior waits. See
+[the depth-policy rejection](benchmarks/dispatch_cost/GRAPH_DEPTH_RESULTS.md).
+Neither neutral enqueue-only nor the rejected depth policy advances to C1. See
 [placement versus submission](benchmarks/dispatch_cost/GRAPH_ENQUEUE_RESULTS.md).
 These results also require balancing the actual factorial cells; rotating unrelated baseline positions did not counterbalance
 those interventions. See [the graph policy evidence](benchmarks/dispatch_cost/GRAPH_POLICY_RESULTS.md).
