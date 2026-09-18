@@ -227,3 +227,26 @@ class as the stable-zero control, cleared by a common terminal producer operatio
 in every arm, while preserving the real AQL wait. This could separate storage/
 completion traffic from pending state. It remains an idea; no relay experiment or
 runtime implementation has been run or qualified.
+
+## First model calibration and next comparison
+
+Codex xhigh reviewed job50519's retained evidence. Threshold24 is the leading
+candidate: every prefetch-on trial beats every guarded trial, off is effectively
+unchanged, and earlier short-join micro losses under unrestricted relaxation are
+avoided. The on-minus-off difference falls2.9290→1.7051 ms/token, consistent with
+a prefetch-related effect but not proof that the remaining difference is wait cost.
+The fixed resident order remains a confound; token intervals are not independent
+replicas of the runtime intervention.
+
+First reverse/rotate the runtime order in a fresh allocation. Run the reserved64
+intervention on the unchanged grouped micros, then freeze its model prediction
+relative to contemporary guarded and24 controls, including a numerical resolution
+band. A model64 result that matches24 when the proxy predicts guarded-like behavior
+would reject that explanation of model admission opportunities. No universal
+micro-to-ms/token multiplier is fitted from the first two interventions.
+
+Only afterward combine graph changes in a same-byte2×2: guarded/24 × default/
+fixed ordering+side-policy bundle, with a default rebuild bridge. Measure the
+interaction in ms/token; scheduling changes arrival, backlog and queue placement,
+so separate implementation changes need not have additive benefits. That grid
+attributes the bundle, not its individual ordering and side-policy components.

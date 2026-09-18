@@ -178,8 +178,11 @@ benefit. A real-attention256-launch positive control supports dispatch pressure
 as a useful predictor in this fixture. The intermediate-count and existing LLM
 holdouts now favor threshold 24: it protects the short joins and improves grouped
 prefetch while retaining the original waiter/fanout benefit. Exact-byte lifecycle
-and PyTorch checks passed. It has advanced to matched C1 calibration; no new model
-result or production qualification is implied. See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
+and PyTorch checks passed. First matched C1 calibration now improves prefetch-on 17.971→16.759 ms/token
+(6.75%) at threshold24, with prefetch-off nearly unchanged (15.042→15.053). Each
+mode has one resident in a fixed order; reverse-order confirmation and the
+model-held-out threshold64 prediction remain. This is not production qualification.
+See [C1 calibration and its audit correction](benchmarks/dispatch_cost/C1_RESULTS.md). See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
 [duplicate suppression](benchmarks/dispatch_cost/DEDUP_RESULTS.md), and
 [packet/arrival evidence](benchmarks/dispatch_cost/PACKET_RESULTS.md).
 Do not deploy unconditional bypass; **a role classifier is not yet selected**.

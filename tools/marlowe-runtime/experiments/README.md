@@ -10,7 +10,7 @@ python3 slurm_experiment.py --host marlowe-login1 \
   --receipt /absolute/local/experiment/job.json \
   --submit-script submit.sh --remote-workdir /absolute/remote/experiment \
   --log '/absolute/remote/experiment/slurm-{job_id}.log' \
-  --validate 'python3 /absolute/remote/experiment/audit.py' \
+  --validate 'python3 /absolute/remote/experiment/audit.py {job_id}' \
   --queue-inspect-s 600 --startup-inspect-s 300 \
   --run-inspect-s 1800 --stall-inspect-s 600
 ```
@@ -29,6 +29,9 @@ Inspect the same job when a deadline fires. If healthy, run the monitor again wi
 the same receipt and adjusted deadlines; its observation window resets, its job
 ID does not. Completed validation is recorded and not repeated automatically.
 Do not add a second watcher or an agent that merely polls the same job.
+
+`{job_id}` in the validation command expands to the attached Slurm ID, so the
+validator can require that exact job's artifacts. Other command braces are preserved.
 
 Raw output, launch receipts, runtime/source hashes and validation artifacts belong
 in the experiment directory outside the repository. All timing trials, including

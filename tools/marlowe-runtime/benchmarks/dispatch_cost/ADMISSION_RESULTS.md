@@ -81,3 +81,39 @@ three prefetch-on and three prefetch-off trials each, retained app/tapes/affinit
 with strict six-worker identity and mapped-library audits. It does not change graph
 ordering, so it cannot recover that separate historical optimization by itself.
 The historical14.897670ms/token best remains a separate target, not a current result.
+
+The first model comparison is now complete: [job50519](C1_RESULTS.md) supports the
+prefetch-on direction (6.75% improvement) while prefetch-off is almost unchanged.
+The corrected offline audit passes all18 timings/identities/maps after accounting
+for the unchanged child-only platform setting. Fixed resident order limits causal
+interpretation; independent confirmation and the model64 prediction remain.
+
+## Model-held-out threshold64 micro screen — job50589
+
+Node2/one GPU, same HIP500e91ca/HSA b8cd. Strict script audit passed24 timing
+processes/2,304 correctness rows and six trace processes/288 rows. Three rotated
+process rounds; unchanged grouped workload sources. All rows retained.
+
+Graph medians of process medians, milliseconds:
+
+| Grouped workload | Stock | Guarded256 | Threshold24 | Threshold64 |
+|---|---:|---:|---:|---:|
+| 4 kernels,32 layers,prefetch on | 8.957 | 8.953 | 8.951 | 8.951 |
+| 25 kernels,32 layers,prefetch on | 11.593 | 11.827 | 11.455 | 11.833 |
+| 25 kernels,64 layers,prefetch on | 23.185 | 23.664 | 22.758 | 23.704 |
+| 25 kernels,32 layers,prefetch off | 11.521 | 11.111 | 10.927 | 10.959 |
+| 25 kernels,64 layers,prefetch off | 23.036 | 21.997 | 21.824 | 21.858 |
+
+Threshold64's prefetch-on effect stays within0.2% of guarded while24 improves
+3.15–3.83%. This predicts a useful model distinction rather than fitting a new
+microbenchmark. Before any model64 trial, the next job's prediction was frozen:
+64 prefetch-on within +/-1% of contemporary guarded and at least2% slower than24;
+24 should repeat a >=2% gain. Prefetch-off is predicted within +/-1% of guarded,
+since the prior micro off gain did not transfer measurably. These are practical
+screening bands, not confidence intervals; no token-interval pseudo-replication.
+
+Model job50613 runs relaxed→24→64→guarded, three alternating on/off cases per
+resident, in a fresh node2 TP4 allocation. It reverses the original three-mode
+relative order. A materially positive64 result matching24 would reject the
+proxy's proposed distinction in admission opportunities. No model64 result is
+implied here. Raw micro audit and CSVs: holdout64-j50589 in the iteration root.

@@ -103,6 +103,7 @@ def main():
     log = a.log or state.get('log')
     validate = a.validate or state.get('validate')
     if log: log = log.format(job_id=job)
+    if validate: validate = validate.replace('{job_id}', str(job))
     if state.get('validation_passed'):
         emit('COMPLETE', job_id=job, validation='already passed')
         return 0
