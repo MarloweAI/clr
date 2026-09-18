@@ -26,6 +26,12 @@ The subsequent [joint-entry publication probe](benchmarks/dispatch_cost/ENTRY_JO
 is rejected: its target is +0.209% versus same-byte separate publication and
 +3.756% versus stock. Correctness and actual mechanism coverage pass, but its
 performance screen fails. The tested fusedRC1 package is unchanged.
+The [grouped flags-off attribution](benchmarks/dispatch_cost/GROUPED_ATTRIBUTION_RESULTS.md)
+then reproduced +2.46/+2.66% long-prefetch losses versus repair-only bytes. Clean
+rebuild and repair-only contrasts stay within2% GPU/host across24cells. Those
+graphs have one root: the entry fork is inactive, correcting the earlier fallback
+explanation. Current-off allocates an extra stream; a same-byte spare toggle is
+the next causal test, not an established explanation or a promoted policy.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.

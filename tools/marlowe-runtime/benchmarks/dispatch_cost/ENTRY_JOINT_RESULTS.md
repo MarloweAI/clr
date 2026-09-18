@@ -114,8 +114,10 @@ The frozen screen requires >=2% target GPU improvement versus separate, improvem
 versus immutable release, and no new >2% GPU/host loss versus either across the
 family. **It fails.** This closes the publication-boundary hypothesis for this
 bounded implementation; it does not prove synchronization cost unavoidable.
-Grouped-copy flags-off regressions use the ordinary entry-marker fallback and
-remain a separate unresolved path.
+Grouped-copy flags-off regressions remain a separate unresolved path. Correction
+after job52568: those grouped captures have one root, so the launch-entry fork
+is inactive. D2H ineligibility for kernel-only entry fusion does not imply an
+entry fallback marker exists. See [grouped attribution](GROUPED_ATTRIBUTION_RESULTS.md).
 
 ## Reproduction and identities
 
