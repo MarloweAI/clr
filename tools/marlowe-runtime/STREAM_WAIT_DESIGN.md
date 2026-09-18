@@ -73,6 +73,12 @@ as entry-containing AQL barriers; completed-start controls emit0/272. All queues
 are physically distinct and CPU waits are off. This establishes submission,
 not GPU stall duration. A bounded CPU-poll diagnostic requires an explicit CPU
 cost limit and normal GPU fallback; no benefit is inferred from these counts.
+The [bounded CPU-poll diagnostic](benchmarks/dispatch_cost/ENTRY_POLL_RESULTS.md)
+then passed192 correctness/failure checks but stopped at its planned mechanism
+gate: all40 KV polls and47/48 expert polls exhausted1000ns while still requiring
+a GPU wait. The sole expert completion was observed at1000ns. No performance
+timing ran. Reject this candidate; preserve the gate instead of lengthening
+the poll or interpreting instrumented counters as a speedup.
 
 ## Stock architecture
 
@@ -169,6 +175,7 @@ shader or infer firmware behavior from timings alone.
 | Kernel-only entry release deferral | No target reaches 2% gain; stock losses remain, waiter removal 95.86% | Do not select |
 | Graph-entry native cost override | 14 same-byte losses >2%; b16/two-stream expert +15.91%; sealed controls neutral | Reject |
 | First-batch dependency integration | No >2% same-byte GPU/host elapsed loss; KV -1.20%, balanced four-stream experts -2.37/-3.15%; residual stock/d3 losses remain | Retain as useful diagnostic; insufficient |
+| First-entry CPU poll, 1000 ns cap | KV 0/40 within-budget completions; experts 1/48; planned gate stops before timing | Reject; no timing or longer-budget retry |
 
 Streams help when independent work leaves complementary hardware capacity available.
 They can lose when branches saturate the same compute, bandwidth or cache resources,
