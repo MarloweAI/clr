@@ -151,6 +151,24 @@ release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
         "Trace native event counts at queue destruction")                     \
 release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
         "Experimental gfx950 native event pre-wait")                          \
+release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
+        "Place longer graph segments first without changing enqueue order")  \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SPARE, true,                               \
+        "Diagnostic control for the existing optional graph spare stream")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE, false,                    \
+        "Restrict optional spare to qualified kernel or placement graphs")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE, false,                  \
+        "Diagnostic: place eligible flat kernel graph on its launch stream") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE, false,                    \
+        "Diagnostic: one accumulator for a coalesced flat kernel graph")      \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE, false,                      \
+        "Diagnostic: share captured-kernel retirement within logical lanes") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL, false,                                          \
+        "Diagnostic: omit success-only final side waits already covered by explicit graph ancestry") \
+release(uint, GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER, 0,                      \
+        "Diagnostic: fail after this many published lane-retirement segments") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE, false,                        \
+        "Untimed graph stream selection and actual queue assignment receipts") \
 release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
          "The maximum number of HW queues allocated per device")              \
 release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \
