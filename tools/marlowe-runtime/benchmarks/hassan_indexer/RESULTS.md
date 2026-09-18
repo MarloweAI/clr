@@ -50,3 +50,5 @@ The private diagnostic runner only generalizes treatment labels/comparison terms
 [Physical queue-cap control](QUEUE_CAP_RESULTS.md) rejects cap1 as a remedy: it retains two logical streams and worsens current graph replay from22.16 to31.65us. A separate logical-stream mapping diagnostic is required to test whether removing unnecessary graph dependencies helps.
 
 [Logical-stream coalescing diagnostic](LOGICAL_COALESCE_RESULTS.md) recovers most of the regression: original-kernel graph replay20.262us versus current parent22.148us and stock19.914us. It still fails the all-round2% gate and has update/device-fallback issues to address before broader qualification. No runtime is promoted.
+
+[Corrected mapping and shared retirement](SHARED_RETIREMENT_RESULTS.md), job53091, passes the unchanged Hassan graph screen: 19.108us versus stock19.903us, approximately4% faster with every round improving. This remains a diagnostic; other workloads and a general placement policy are unqualified.
