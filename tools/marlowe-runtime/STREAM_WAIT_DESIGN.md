@@ -14,9 +14,10 @@ improvement is [fused first-batch entry](benchmarks/dispatch_cost/ENTRY_FUSED_RE
 it retains95.83% waiter excess removal and improves small KV by1.20% and balanced
 four-stream experts by2.37–3.15% relative to same-byte lazy markers. However,
 two-stream experts still lose3.42% to stock, and four expert targets lose4.37–5.83%
-to historical d3. Final qualification remains held. A diagnostic corrected-byte
-C1 on/off ABBA bridge is now running as52268; it measures package preservation
-against historical d3 and cannot waive the microbenchmark failures.
+to historical d3. Final qualification remains held. The [corrected-byte C1 bridge](benchmarks/graph_completion/FUSED_C1_RESULTS.md)
+stays within 0.48% of historical d3 in both prefetch states and both matched
+blocks. Prefetch-on is within 1.3–1.6% of the separate historical best. This
+passes the model screens but cannot waive the microbenchmark failures. C4 is next.
 
 The selected architecture uses strict native admission at24 unread producer
 kernels and cached stable node-count placement with original enqueue order.
