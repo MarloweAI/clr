@@ -44,7 +44,15 @@ All ranks observed the same differences: baseline prefetch-on had two 134-segmen
 structures (five and three launches), while placement had one 134-segment structure
 (three launches). The later baseline and placement shapes differ by one node in the
 final segment (23 versus 22); an earlier baseline shape also has shorter interior
-segments. The trace does not establish why those captures differ. All records and
+segments. The trace does not establish why those captures differ. Subsequent C4
+startup evidence exposed a harness readiness race: HTTP readiness could precede
+the server's ordinary warmup completion. In these retained C1 trace artifacts,
+response metadata places the baseline prefetch-on request before its parent's
+warmup-complete marker (08:42:11–08:42:26 UTC); the candidate request begins after
+its marker (08:46:11 versus 08:46:06). Consequently these traces describe observed
+model activity, not exclusively request-owned work. This is compatible with startup
+activity contributing to the baseline trace, but does not identify the ownership of
+each extra launch or explain all topology differences. All records and
 the failed gate remain preserved. Prefetch-off matches exactly: one 2,417-node
 segment, three launches on each rank.
 
