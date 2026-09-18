@@ -1,8 +1,10 @@
 # Stream scheduling and native-wait admission
 
 Design proposal, 2026-09-18. Scope: ROCm 7.2.4 / gfx950, unchanged HIP/PyTorch APIs.
-**Recommendation:** retain guarded admission for ordinary event waits; develop a
-separate graph policy that understands dependency roles and actual queue mapping.
+**Recommendation after Fable review:** retain guarded admission for ordinary event
+waits; first separate producer dispatch pressure, blocking time at GPU arrival and
+consumer handoff cost. Use graph roles as measurement metadata before making them
+admission rules. See [the review and corrections](STREAM_WAIT_REVIEW.md).
 Treat scheduling, wait admission, and completion-marker removal as independent
 changes. Unconditional bypass is a diagnostic, not the target architecture.
 
@@ -125,14 +127,19 @@ waits admitted or the overlap percentage. A native prewait is attractive when:
 `producer interference avoided > extra consumer handoff + packet/retirement cost`,
 counting costs exposed on the critical path rather than adding every stage duration.
 
-That depends on when the consumer reaches the wait, remaining producer work,
+Neither duration nor dispatch count alone is established as sufficient: our earlier
+large-kernel fork/join case also regressed under native waits. The tradeoff depends
+on when the consumer reaches the wait, remaining producer work,
 physical queue/engine assignment and which branch determines completion. Kernel
 count, logical stream name and total graph size are incomplete proxies.
 
 Keep three layers explicit:
 
-1. **Dependency correctness:** original AQL conditions/fences, signal generation
-   ownership, producer-before-consumer ordering and final completion stay invariant.
+1. **Dependency correctness and eligibility:** original AQL conditions/fences, signal
+   generation ownership and final completion stay invariant. Keep physical-queue,
+   supported-signal/ABI and nonblocking fallback checks outside cost-admission knobs.
+   The historical bypass skips same-queue/unknown-producer checks too; it is not the
+   implementation template for a new policy.
 2. **Graph schedule:** map independent work to distinct available queues and schedule
    ready work using estimated critical-path cost. Never add streams just to raise a count.
 3. **Optional wait optimization:** attach bounded metadata to a specific dependency
@@ -146,30 +153,51 @@ Do not extend history across an arbitrary wait merely to make a threshold pass.
 Pinned-host gather is GPU compute, whereas an actual SDMA transfer is a different
 engine: “copy stream” is not enough information to choose the wait policy.
 
+The [microbenchmark mismatch note](STREAM_WAIT_MICRO_GAPS.md) records our independent
+hypotheses. Fable's review moves the count/duration/readiness test ahead of the
+direct-versus-relayed test; both precede choosing a graph-role classifier.
+
 ## 4. Ranked candidates
 
 | Priority / candidate | Concrete change | Why promising / main risk | Decisive test |
 |---|---|---|---|
-| **1. Graph dependency-role admission** | Keep v9 guard for eager/unknown dependencies. In graphs, permit subthreshold native waits only on classified internal side-branch handoffs with distinct physical queues, a submitted producer and an independent producer prefix. Keep short fork/join and final joins guarded initially. Bound admissions per dependency frontier, not per whole graph. | Builds on the measured sidewait benefit and scheduling interaction. Expert branches may look similar to prefetch; role alone may fail. Producer-prefix cost must distinguish them. | C1-like grouped prefetch and balanced/skew experts in the same binary. Reject if expert/queued regressions return or long-producer benefit disappears. |
+| **1. Measurement-gated graph admission** | Keep v9 eager/unknown behavior. Partition graph edges by role, physical queue and producer provenance for attribution. Implement selective exceptions only after measurements distinguish beneficial waits from short joins; roles alone do not grant admission. | Admission causality is measured, but the classifier is unresolved. Host-time history can differ from work remaining at GPU wait entry; experts and prefetch can share a role. | First separate launch count, work duration and readiness; then direct/relayed completion. Require prefetch gains and expert/queued holdouts together. |
 | **2. Schedule and simplify the graph first** | Preserve collision avoidance; rank ready segments by downstream critical-path estimate, using duration estimates only when available. Prove redundant same-queue/transitive waits before removing them. Treat marker omission separately. | Avoids serializing useful work regardless of wait backend. Node count is cheap but weak; concurrent resource contention can reverse a duration-based choice. Removing markers can alter CPU lifetime/profiling. | Two-/four-stream experts, short and long prefetch, saturated-resource controls; same-byte ordering on/off with both admission modes. |
 | **3. Repeated-graph cost policy** | Cache per-edge decisions using bounded, sampled event timing or existing profile data; consider remaining producer time and observed fork/join cost. Freeze decisions during measurement, add hysteresis and conservative fallback. | Addresses long kernels and forwarded events that count-based policy misses. Sampling perturbs scheduling; stale timings and collection overhead can erase gains. | Train on one shape, test unseen lengths, occupancy and queue depth. Charge sampling overhead; reject oscillation or a model-specific whitelist. |
 | **4. Lower-level native AQL wait path** | Investigate ROCr/packet-processor support for efficient queue-local waiting that preserves full signal/fence/notification semantics without our extra prewait packet. | Cleanest eventual abstraction if short handoff is intrinsic to the current two-packet path. Firmware/queue-scheduling behavior and platform support are unproven. | Tiny ready/pending waits, fanout, short chains and large-kernel fork/join; inspect the packet path only if the runtime candidates cannot meet both goals. |
 
-Do not simply lower 256 globally or deploy unconditional bypass. Both ignore wait
-readiness at execution and repeat a known failure mode. Candidate 1 is the first
-experiment, **not a claim that we already know the right classifier**. Candidate 2
-can improve it independently; candidate 3 is justified only if static metadata fails.
+The separating tests now reject a global threshold 8: the 16-launch captured
+attention holdout regresses 6.12%. Threshold 32 is close to guarded in that matrix,
+but has no demonstrated model recovery. Early-arrival tests show a single native
+prewait can recover about 15 µs of producer execution while adding about 30 µs to
+handoff, making total execution worse. Duplicate suppression removes a confirmed
+second packet but leaves the holdout 5.63% slower than guarded. The next decision
+was therefore the packet path. That diagnostic now shows intervals1/4/16 and
+ordering leave the penalty; stable-zero removes both the penalty and the producer
+benefit. A real-attention256-launch positive control supports dispatch pressure
+as a useful predictor in this fixture. The intermediate-count and existing LLM
+holdouts now favor threshold 24: it protects the short joins and improves grouped
+prefetch while retaining the original waiter/fanout benefit. Exact-byte lifecycle
+and PyTorch checks passed. It has advanced to matched C1 calibration; no new model
+result or production qualification is implied. See [the admission holdouts](benchmarks/dispatch_cost/ADMISSION_RESULTS.md). See [dispatch evidence](benchmarks/dispatch_cost/RESULTS.md),
+[duplicate suppression](benchmarks/dispatch_cost/DEDUP_RESULTS.md), and
+[packet/arrival evidence](benchmarks/dispatch_cost/PACKET_RESULTS.md).
+Do not deploy unconditional bypass; **a role classifier is not yet selected**.
+Candidate 2 can improve scheduling independently. Before candidate 3, validate
+completion-observation lag and sampling overhead; CPU timestamps are not wait-entry times.
 
 ## 5. Bounded implementation and validation plan
 
-1. **Identify the policy boundary:** retain completed 50108 as inconclusive for
-   marker cost; require replication before claiming a marker win. Separately count admission rejection reasons and dependency roles in one diagnostic
-   micro pass, with queue identity and signal generation. No stderr tracing during timings.
-   This checks whether the missing C1-like opportunities really are subthreshold
-   internal handoffs before implementing candidate 1's exception.
-2. **One prototype, one new decision:** add dependency metadata and candidate 1 behind
-   a default-off flag. Keep marker removal off and hold scheduling fixed. Compare stock,
-   guarded and new policy on identical candidate bytes; retain a rebuild control.
+1. **Identify the policy boundary:** retain 50108 as inconclusive for marker cost.
+   Run the [count/duration/readiness experiment](STREAM_WAIT_REVIEW.md#revised-next-experiment)
+   alongside a bounded untimed C1 admission census. Prioritize the direct/relayed
+   completion test if the census points to lost provenance rather than count rejection. Count skip reasons, physical queues
+   and signal generations separately from timing. Do not infer native packet cost
+   from an already-ready-at-CPU control: its prewait may never be emitted.
+2. **One prototype, one new decision:** select the admission variable from those
+   results, not the benchmark name. Add it behind a default-off flag with physical
+   eligibility retained. Keep markers and scheduling fixed; compare same-byte
+   guarded/new controls, stock separately, and retain a rebuild control.
 3. **Small separating matrix:** few-long versus many-short producer kernels at similar
    total work; early versus delayed consumer arrival; independent prefix versus repeated
    joins; 1/2/4 physical queues including shared-queue fallback; two-/four-stream experts;
@@ -177,17 +205,19 @@ can improve it independently; candidate 3 is justified only if static metadata f
    bandwidth-contention controls. Include original waiter and queued fanout. Do not tune
    kernels to favor the policy. Reserve changed shapes as holdouts.
 4. **Acceptance before another model grid:** preserve ~96% waiter-excess reduction;
-   recover at least 80% of the same-run guarded→bypass benefit in the many-kernel
+   recover at least 80% of the same-run guarded→eligibility-preserving relaxed benefit in the many-kernel
    prefetch holdout; no known guarded-control regression >2% consistently across three
    paired rounds. Material noisy losses require another allocation, not filtering.
    Require output/dependency correctness, event reuse, queue sharing, graph updates,
    endpoint ties, profiling fallback and PyTorch event/graph checks on exact bytes.
    These are proposed gates, not guarantees of universal neutrality. The exact
    signal-value/ABI guards, nonblocking fallback and instruction retirement must remain.
-5. **Then narrow model confirmation:** peer-owned C1 prefetch-on TP4 on node2, matched
-   guarded/new/bypass controls, three retained trials each. Aim to recover ≥80% of the
-   guarded→bypass gain without sacrificing micro holdouts. Only afterward expand to
-   C1 prefetch-off, C4 and standard GLM. Keep the runtime independent of application tuning.
+5. **Then narrow model confirmation:** script-owned C1 prefetch-on/off TP4 runs, matched
+   guarded/new/eligibility-preserving relaxed controls, three retained trials each.
+   Record micro predictions before model runs; validate held-out interventions rather
+   than claiming a proxy from one same-sign result. Aim to recover ≥80% of the
+   eligible relaxed gain without sacrificing micro holdouts, while tracking the absolute
+   historical best separately. Only afterward expand a good candidate to C4 and standard GLM. Keep the runtime independent of application tuning.
 
 Ship a single coherent policy only after those gates, with an opt-in versioned
 HIP/HSA overlay and stock rollback. Keep timing/debug harnesses outside the runtime
