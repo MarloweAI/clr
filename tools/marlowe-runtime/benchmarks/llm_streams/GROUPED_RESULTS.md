@@ -447,3 +447,27 @@ requested. Endpoint-tie stress and production qualification remain outstanding.
 Evidence: `MARKER_POLICY_RESULTS.md`, `marker-policy-j50081-audit.json`,
 `marker-paired-j50100/audit.json`, and their `audit_marker_*` scripts in the
 C1 prefetch investigation directory. All trials and timing rows are retained.
+
+
+## C1 marker comparison (50108): valid trials, inconclusive performance attribution
+
+Node2 TP4 job completed0:0. All nine retained trials pass independent strict
+identity/control and mapped-library audits, using previous side-policy7485acf
+then new markerbc81b3 omissionoff/on. All three cohorts use native1,trace0,
+ordering1,bypass1,sidewait1, retained app e4b3fe5 and inherited affinity.
+
+| Cohort | Trials, ms/token | Median |
+|---|---|---:|
+| Previous side-policy | 15.275766,16.466526,15.252025 | 15.275766 |
+| New marker bytes, omissionoff | 22.881482,15.239342,76.279153 | 22.881482 |
+| Identical bytes, omissionon | 15.096933,21.638176,15.016554 | 15.096933 |
+
+Rebuild difference+7.605715ms and off/on difference-7.784548ms are descriptive
+only. Two off trials and one on trial contain large retained intervals; this
+comparison does not establish a stable marker benefit. No trial or interval was
+discarded, no gap investigation performed, and no fastest-trial result substituted.
+The model residual remains unassigned. No production qualification is implied.
+
+Evidence: MARKER_POLICY_MODEL_RESULTS.md, model-marker-policy-j50108-audit.json
+and audit_marker_policy_model.py in the C1 investigation. Architecture candidates
+and next separating experiments are in [the design proposal](../../STREAM_WAIT_DESIGN.md).

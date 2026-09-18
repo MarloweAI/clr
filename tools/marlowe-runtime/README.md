@@ -9,6 +9,9 @@ to avoid the short-chain and late-wait regressions of unconditional prewaits.
 The source lock below identifies the packaged release; development benchmark
 results do not qualify different packaged bytes.
 
+The [stream architecture proposal](STREAM_WAIT_DESIGN.md) reviews the measured
+tradeoffs and ranks next candidates; it does not change release defaults.
+
 [Qualification evidence and open promotion gates](QUALIFICATION.md) distinguish
 the PyTorch wait result, isolated runtime toggle tests and stock-image comparisons.
 
