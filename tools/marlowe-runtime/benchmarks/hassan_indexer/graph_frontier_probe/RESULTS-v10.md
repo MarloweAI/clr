@@ -1,5 +1,7 @@
 # Measured graph-frontier checkpoint — v10
 
+Update: the broad gate and fixed repeat are complete. QUALIFICATION-v10.md reports the final checkpoint; this document retains the first cohort.
+
 **V10 is the new measured Hassan best:** unchanged warm two-stream Q/K drops from matched v7 11.662377 µs to 10.207079 µs per pair, versus stock 14.272910 µs. That is 12.48 % faster than v7 and 28.49 % faster than stock. Same-byte central/distributed comparison isolates a 12.48 % improvement. Qualification remains incomplete because of the holdout caveats below and pending broader coverage.
 
 | GPU µs/pair | Stock | Matched previous v7 | V10 central | V10 distributed | Distributed / stock |
@@ -42,7 +44,7 @@ Added waiter overhead is 2083.951 µs on stock and 85.994 µs on V10 distributed
 
 The V10 ordering fix and resource/lifetime suite pass; V8 remains disqualified. See BOUNDARY-v10.md and the retained negative-control output. No production claims follow from these tests.
 
-A fresh unchanged-suite job is running the remaining 208-cell gate and repeating the expert/attention suites to examine the two variable regressions. Earlier V7 expanded coverage found three pipeline and one mixed stock losses of 2.66–3.51 %, also present in matched v4; no V10 result is available yet for that coverage. The repeated cohort will be reported separately and the first cohort retained.
+The unchanged-suite follow-up completed the remaining 208-cell gate and repeated the expert/attention suites; see QUALIFICATION-v10.md. Earlier V7 expanded coverage found three pipeline and one mixed stock losses of 2.66–3.51 %, also present in matched v4; the new V10 coverage is reported in REMAINING-v10.md. Both cohorts are reported separately and retained.
 
 Goal 1 still requires a final broad checkpoint. Goal 2 remains pending: recover/remeasure the best HiSparse runtime, validate GLM 5.2 resident e2e without HiSparse, and create a new clean minimal PR with a separate microbenchmark folder. No new full-model job has run.
 
