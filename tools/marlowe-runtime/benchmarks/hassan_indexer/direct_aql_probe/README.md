@@ -1,0 +1,5 @@
+# Frozen exact captured Q/K direct-AQL diagnostic
+
+Job54847 source and retained timing summary; see ../DIRECT_AQL_RESULTS.md. This is a diagnostic reproducer, not runtime code. The source manifest is byte-for-byte the one launched from /workspace/home/sasha/amd-runtime-production/iterations/hassan-direct-aql-20260919, with exact K build/headers/libraries under the sibling hassan-kernel-completion-20260918. The launcher also requires the recorded hisparse-preview-48593 container and original AITER environment. The stored run.py auditor references source.json in its own directory. Full immutable artifacts, built bridges, packet blobs, signal handles, graph topology, timestamps, numerical checks and map receipts remain at the raw roots in the report.
+
+To reproduce in the retained environment, use the original source root and a new result directory with the standalone Slurm monitor; never overwrite results-j54847. Moving paths or changing any source/environment requires an explicitly new manifest and receipt. The committed timings.csv retains all320 trials; summary-j54847.json retains the exact original audit summary.
