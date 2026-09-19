@@ -1,0 +1,690 @@
+diff --git a/hipamd/src/hip_graph_internal.cpp b/hipamd/src/hip_graph_internal.cpp
+index c331795..537ce6b 100644
+--- a/hipamd/src/hip_graph_internal.cpp
++++ b/hipamd/src/hip_graph_internal.cpp
+@@ -1274,7 +1274,7 @@ hipError_t GraphExec::CaptureAQLPackets() {
+ // ================================================================================================
+ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
+   std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
+-  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     return hipSuccess;
+   }
+@@ -1378,7 +1378,7 @@ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
+ hipError_t GraphExec::UpdatePacketBatchesForNodeEnableDisable(hip::GraphNode* node,
+                                                               bool isEnabled) {
+   std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
+-  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     // Only handle single stream case with captured nodes
+     return hipSuccess;
+@@ -2328,7 +2328,8 @@ bool Graph::RunNodes(int32_t base_stream, const std::vector<hip::Stream*>* paral
+ 
+ bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
+                                   std::unordered_map<int, hip::Stream*>& assignment) {
+-  if (!GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || !amd::IS_HIP || !AMD_DIRECT_DISPATCH ||
++  if ((!GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS && !GPU_GRAPH_DIAGNOSTIC_FRONTIER) ||
++      !amd::IS_HIP || !AMD_DIRECT_DISPATCH ||
+       DEBUG_HIP_FORCE_ASYNC_QUEUE || !use_segment_scheduling_ || streams_coalesced_ ||
+       max_streams_dev_.size() != 1 || instantiateDeviceId_ != launch_stream->DeviceId() ||
+       entry_fused_device_id_ != launch_stream->DeviceId() || streams_.size() < 2 ||
+@@ -2377,6 +2378,9 @@ bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
+       if (assignment.count(predecessor) == 0) return false;
+     }
+   }
++  // The private final join is a real token consumer even when the two root
++  // branches have no internal edge (the original-sized Hassan graph).
++  if (GPU_GRAPH_DIAGNOSTIC_FRONTIER) return launch_stream->vdev()->supportsGraphFrontier();
+   // No internal cross-queue dependency means no GPU token consumer. Keep the
+   // established path; creating/resetting tokens would perform no useful work.
+   for (const auto& segment : segments_) {
+@@ -2389,12 +2393,14 @@ bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
+   return false;
+ }
+ 
+-GraphExec::GraphSignalGeneration* GraphExec::AcquireGraphSignalGeneration(hip::Stream* stream) {
++GraphExec::GraphSignalGeneration* GraphExec::AcquireGraphSignalGeneration(hip::Stream* stream,
++                                                                        size_t count) {
++  if (count == 0) count = segments_.size();
+   {
+     std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
+     for (auto& generation : graph_signal_generations_) {
+       if (!generation->busy && !generation->quarantined &&
+-          generation->arena->handles.size() == segments_.size()) {
++          generation->arena->handles.size() == count) {
+         generation->busy = true;
+         return generation.get();
+       }
+@@ -2403,7 +2409,7 @@ GraphExec::GraphSignalGeneration* GraphExec::AcquireGraphSignalGeneration(hip::S
+   // Creation can call the driver; never block completion callbacks on it.
+   auto generation = std::make_unique<GraphSignalGeneration>();
+   generation->arena = stream->vdev()->createGraphSignalArena(
+-      segments_.size(), !GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST);
++      count, !GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST);
+   if (!generation->arena) return nullptr;
+   generation->busy = true;
+   auto* result = generation.get();
+@@ -2535,12 +2541,172 @@ hipError_t GraphExec::RunGraphSignals(hip::Stream* launch_stream,
+   return status;
+ }
+ 
++hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
++    const std::unordered_map<int, hip::Stream*>& assignment) {
++  using Batch = amd::device::VirtualDevice::GraphFrontierBatch;
++  struct SegmentPlan {
++    hip::Stream* stream;
++    int id;
++    std::unique_ptr<Batch> packets;
++    std::unique_ptr<Batch> prefix_join;
++  };
++  // GraphExec serialization protects assignment/templates; canonical vdev lock
++  // order also permits concurrent launch/observe on the public launch stream.
++  std::vector<amd::Monitor*> locks{&launch_stream->vdev()->execution()};
++  for (const auto& pair : assignment) locks.push_back(&pair.second->vdev()->execution());
++  std::sort(locks.begin(), locks.end(), std::less<amd::Monitor*>());
++  locks.erase(std::unique(locks.begin(), locks.end()), locks.end());
++
++  auto* generation = AcquireGraphSignalGeneration(launch_stream, segments_.size() + 2);
++  if (generation == nullptr) return hipErrorOutOfMemory;
++  const uint64_t serial = ++graph_signal_launch_serial_;
++  const uint64_t entry = generation->arena->handles.at(segments_.size());
++  const uint64_t frontier = generation->arena->handles.at(segments_.size() + 1);
++  retain();
++  auto release_owner = [this, generation, serial](bool safe) {
++    {
++      std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++      generation->quarantined = !safe;
++      if (safe) generation->busy = false;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_FRONTIER_RELEASE graph=%p serial=%llu generation=%p recycled=%u\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial),
++                static_cast<void*>(generation), safe);
++      }
++    }
++    // A failed completion deliberately preserves graph/arena ownership.
++    if (safe) release();
++  };
++  auto* command = new amd::GraphFrontierCommand(*launch_stream, frontier, release_owner);
++  if (!command->initialize()) {
++    command->release();
++    return hipErrorOutOfMemory;
++  }
++
++  // Notification can enqueue and take notify_lock. It must stay outside every
++  // execution lock. Retained pointers prevent ABA while the tail is validated.
++  for (;;) {
++    auto* snapshot = launch_stream->getLastQueuedCommand(true);
++    amd::Event* predecessor = snapshot;
++    void* ordinary_hw_event = nullptr;
++    const bool chained = snapshot != nullptr && snapshot->graphFrontier() != 0;
++    if (snapshot != nullptr && !chained) {
++      if (!snapshot->notifyCmdQueue(false)) {
++        snapshot->release(); command->release(); return hipErrorUnknown;
++      }
++      if (snapshot->NotifyEvent() != nullptr) predecessor = snapshot->NotifyEvent();
++      ordinary_hw_event = predecessor->HwEvent();
++      if (ordinary_hw_event == nullptr && predecessor->status() != CL_COMPLETE) {
++        snapshot->release(); command->release(); return hipErrorUnknown;
++      }
++    }
++    std::vector<std::unique_lock<amd::Monitor>> guards;
++    guards.reserve(locks.size());
++    for (auto* lock : locks) guards.emplace_back(*lock);
++    // notifyCmdQueue can intentionally advance P -> notification marker M.
++    // Accept that exact M; an intervening later submit requires a new snapshot.
++    if (launch_stream->getLastQueuedCommand(false) != predecessor) {
++      guards.clear();
++      if (snapshot != nullptr) snapshot->release();
++      continue;
++    }
++
++    const uint64_t launch_queue = launch_stream->getQueueID();
++    const uint64_t entry_dependency = chained ? snapshot->graphFrontier() : entry;
++    std::unordered_map<uint64_t, uint64_t> tails;
++    std::vector<SegmentPlan> plans;
++    plans.reserve(segments_.size());
++    auto entry_plan = launch_stream->vdev()->prepareGraphFrontierJoin({}, entry, false);
++    auto empty_join = launch_stream->vdev()->prepareGraphFrontierJoin({}, frontier, true);
++    bool prepared = entry_plan != nullptr && empty_join != nullptr;
++    std::unordered_set<int> published_order;
++    for (int level = 0; level <= max_dependency_level_ && prepared; ++level) {
++      auto level_it = segments_per_level_.find(level);
++      if (level_it == segments_per_level_.end()) continue;
++      for (int id : level_it->second) {
++        auto* stream = assignment.at(id);
++        const uint64_t queue = stream->getQueueID();
++        const bool first = tails.count(queue) == 0;
++        std::vector<uint64_t> dependencies;
++        if (first && queue != launch_queue) dependencies.push_back(entry_dependency);
++        for (int dep : segments_[id].segment_ids_dependencies) {
++          if (published_order.count(dep) == 0) { prepared = false; break; }
++          if (assignment.at(dep)->getQueueID() != queue) {
++            dependencies.push_back(generation->arena->handles.at(dep));
++          }
++        }
++        if (!prepared) break;
++        const auto& batch = segmentBatches_.at(id).packet_batches.front();
++        auto packets = stream->vdev()->prepareGraphFrontierKernels(batch.dispatchPackets,
++            dependencies, generation->arena->handles.at(id), first);
++        tails[queue] = generation->arena->handles.at(id);
++        std::vector<uint64_t> terminal;
++        terminal.reserve(tails.size());
++        for (const auto& tail : tails) terminal.push_back(tail.second);
++        auto join = launch_stream->vdev()->prepareGraphFrontierJoin(terminal, frontier, true);
++        if (packets == nullptr || join == nullptr) { prepared = false; break; }
++        plans.push_back({stream, id, std::move(packets), std::move(join)});
++        published_order.insert(id);
++      }
++    }
++    if (!prepared || plans.size() != segments_.size() ||
++        !launch_stream->vdev()->resetGraphSignalArenaCpu(*generation->arena)) {
++      guards.clear();
++      if (snapshot != nullptr) snapshot->release();
++      command->release();
++      return hipErrorUnknown;  // No packet of this launch was published.
++    }
++    command->setPredecessor(predecessor);
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_FRONTIER_BEGIN graph=%p serial=%llu generation=%p segments=%zu lanes=%zu chained=%u frontier=%llu\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(serial),
++              static_cast<void*>(generation), plans.size(), tails.size(), chained,
++              static_cast<unsigned long long>(frontier));
++    }
++    // From here every exit publishes a prebuilt all-touched-lane join and enters
++    // the normal host batch. No resource allocation is needed by the raw backend.
++    command->markPublished();
++    if (!chained) {
++      launch_stream->vdev()->importGraphFrontierPredecessor(ordinary_hw_event);
++      launch_stream->vdev()->publishGraphFrontierBatch(*entry_plan);
++    }
++    size_t submitted = 0;
++    hipError_t result = hipSuccess;
++    for (const auto& plan : plans) {
++      plan.stream->vdev()->publishGraphFrontierBatch(*plan.packets);
++      ++submitted;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_FRONTIER_SEGMENT graph=%p serial=%llu segment=%d physical=%llu\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial), plan.id,
++                static_cast<unsigned long long>(plan.stream->getQueueID()));
++      }
++      if (GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER != 0 &&
++          submitted == GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER) {
++        result = hipErrorUnknown;
++        break;
++      }
++    }
++    launch_stream->vdev()->publishGraphFrontierBatch(
++        submitted == 0 ? *empty_join : *plans.at(submitted - 1).prefix_join);
++    command->enqueue();  // Same execution-lock transition as packet publication.
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_FRONTIER_END graph=%p serial=%llu submitted=%zu status=%d\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(serial), submitted,
++              static_cast<int>(result));
++    }
++    guards.clear();
++    if (snapshot != nullptr) snapshot->release();
++    command->release();
++    return result;
++  }
++}
++
+ hipError_t ihipGraphDebugDotPrint(hip::Graph* graph, const char* path, unsigned int flags);
+ 
+ // ================================================================================================
+ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+   std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
+-  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   hipError_t status = hipSuccess;
+   amd::Marker* fused_completion_marker = nullptr;
+ 
+@@ -2595,7 +2761,9 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+     }
+     std::unordered_map<int, hip::Stream*> local_signal_assignment;
+     if (CanUseGraphSignals(launch_stream, local_signal_assignment)) {
+-      return RunGraphSignals(launch_stream, local_signal_assignment);
++      return GPU_GRAPH_DIAGNOSTIC_FRONTIER
++          ? RunGraphFrontier(launch_stream, local_signal_assignment)
++          : RunGraphSignals(launch_stream, local_signal_assignment);
+     }
+     if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS && GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
+       fprintf(stderr, "GRAPH_LOCAL_FALLBACK graph=%p segments=%zu streams=%zu\n",
+diff --git a/hipamd/src/hip_graph_internal.hpp b/hipamd/src/hip_graph_internal.hpp
+index 0076721..de78611 100644
+--- a/hipamd/src/hip_graph_internal.hpp
++++ b/hipamd/src/hip_graph_internal.hpp
+@@ -1002,6 +1002,8 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+                           std::unordered_map<int, hip::Stream*>& assignment);
+   hipError_t RunGraphSignals(hip::Stream* launch_stream,
+                             const std::unordered_map<int, hip::Stream*>& assignment);
++  hipError_t RunGraphFrontier(hip::Stream* launch_stream,
++                             const std::unordered_map<int, hip::Stream*>& assignment);
+   static void ReleaseGraphSignalLaunch(cl_event event, cl_int status, void* data);
+   //! Find the number of streams required per device for multi-device graph execution
+   //! This method analyzes the stream-to-device mappings and recursively processes
+@@ -1091,7 +1093,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+   std::mutex graph_signal_pool_mutex_;
+   std::vector<std::unique_ptr<GraphSignalGeneration>> graph_signal_generations_;
+   uint64_t graph_signal_launch_serial_ = 0;
+-  GraphSignalGeneration* AcquireGraphSignalGeneration(hip::Stream* stream);
++  GraphSignalGeneration* AcquireGraphSignalGeneration(hip::Stream* stream, size_t count = 0);
+ };
+ 
+ class ChildGraphNode : public GraphNode, public GraphExec {
+diff --git a/rocclr/device/device.hpp b/rocclr/device/device.hpp
+index a1d6ce9..87baf19 100644
+--- a/rocclr/device/device.hpp
++++ b/rocclr/device/device.hpp
+@@ -1350,6 +1350,23 @@ class VirtualDevice : public amd::ReferenceCountedObject {
+       const std::vector<uint64_t>& dependencies, uint64_t completion) {
+     return false;
+   }
++  // Prepared private graph packets have no ordinary host completion. The caller
++  // owns all token/argument lifetimes and holds execution() while publishing.
++  class GraphFrontierBatch {
++   public:
++    virtual ~GraphFrontierBatch() = default;
++  };
++  virtual bool supportsGraphFrontier() const { return false; }
++  virtual bool resetGraphSignalArenaCpu(GraphSignalArena&) { return false; }
++  virtual std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierKernels(
++      const std::vector<uint8_t*>& packets, const std::vector<uint64_t>& dependencies,
++      uint64_t completion, bool system_acquire) { return nullptr; }
++  virtual std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierJoin(
++      const std::vector<uint64_t>& dependencies, uint64_t completion,
++      bool system_release) { return nullptr; }
++  virtual void publishGraphFrontierBatch(const GraphFrontierBatch&) { std::abort(); }
++  virtual void importGraphFrontierPredecessor(void* ordinary_hw_event) { std::abort(); }
++  virtual void materializeGraphFrontier(amd::Marker&, uint64_t) { std::abort(); }
+   //! Returns the number of outstanding HSA async handlers
+   std::atomic<uint64_t>& QueuedAsyncHandlers() const { return queued_async_handlers_; }
+ 
+diff --git a/rocclr/device/rocm/rocvirtual.cpp b/rocclr/device/rocm/rocvirtual.cpp
+index 20f72a8..6af567d 100644
+--- a/rocclr/device/rocm/rocvirtual.cpp
++++ b/rocclr/device/rocm/rocvirtual.cpp
+@@ -1668,6 +1668,7 @@ class RocGraphSignalArena final : public device::VirtualDevice::GraphSignalArena
+  public:
+   const Device& device;
+   uint64_t* table = nullptr;
++  std::vector<volatile hsa_signal_value_t*> values;
+   explicit RocGraphSignalArena(const Device& dev) : device(dev) {}
+   ~RocGraphSignalArena() override {
+     for (uint64_t handle : handles) {
+@@ -1691,6 +1692,12 @@ VirtualGPU::createGraphSignalArena(size_t count, bool local) {
+     hsa_signal_t signal{};
+     if (Hsa::signal_create(1, 1, &agent, attributes, &signal) != HSA_STATUS_SUCCESS) return nullptr;
+     arena->handles.push_back(signal.handle);
++    volatile hsa_signal_value_t* value = nullptr;
++    if (Hsa::signal_value_pointer(signal, &value) != HSA_STATUS_SUCCESS ||
++        value == nullptr || reinterpret_cast<uintptr_t>(value) % alignof(hsa_signal_value_t)) {
++      return nullptr;
++    }
++    arena->values.push_back(value);
+   }
+   arena->table = static_cast<uint64_t*>(dev().hostAlloc(count * sizeof(uint64_t), 64,
+                                                        Device::MemorySegment::kKernArg));
+@@ -1704,6 +1711,155 @@ VirtualGPU::createGraphSignalArena(size_t count, bool local) {
+   return arena;
+ }
+ 
++namespace {
++// The vector is fully constructed before the first packet of a launch is
++// published. Kernel and barrier packets both use the fixed 64-byte AQL ABI.
++struct RocGraphFrontierBatch final : device::VirtualDevice::GraphFrontierBatch {
++  struct alignas(64) Packet { uint64_t words[8] = {}; };
++  std::vector<Packet> packets;
++  void appendWaits(const std::vector<uint64_t>& dependencies, uint64_t completion,
++                   bool final_join) {
++    const size_t count = std::max(size_t(1), (dependencies.size() + 4) / 5);
++    for (size_t i = 0; i < count; ++i) {
++      hsa_barrier_and_packet_t barrier{};
++      const bool last = i + 1 == count;
++      barrier.header = kNopPacketHeader;
++      // Ordered preceding barriers make this an AND of all dependencies, even
++      // above the AQL five-signal limit. Only the final packet releases to SYSTEM.
++      if (last && final_join) {
++        barrier.header |= HSA_FENCE_SCOPE_AGENT << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE;
++        barrier.header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE;
++      }
++      for (size_t j = 0; j < 5 && i * 5 + j < dependencies.size(); ++j) {
++        barrier.dep_signal[j].handle = dependencies[i * 5 + j];
++      }
++      if (last) barrier.completion_signal.handle = completion;
++      Packet packet;
++      static_assert(sizeof(packet) == sizeof(barrier), "AQL ABI");
++      std::memcpy(&packet, &barrier, sizeof(packet));
++      packets.push_back(packet);
++    }
++  }
++};
++}
++
++bool VirtualGPU::supportsGraphFrontier() const {
++#if defined(__x86_64__) && !IS_WINDOWS
++  const auto& isa = dev().isa();
++  return isa.versionMajor() == 9 && isa.versionMinor() == 5 && isa.versionStepping() == 0;
++#else
++  return false;
++#endif
++}
++
++bool VirtualGPU::resetGraphSignalArenaCpu(GraphSignalArena& storage) {
++#if defined(__x86_64__) && !IS_WINDOWS
++  auto& arena = static_cast<RocGraphSignalArena&>(storage);
++  static_assert(__atomic_always_lock_free(sizeof(hsa_signal_value_t), nullptr),
++                "Private signal reset requires lock-free signal-width stores");
++  // Exclusive, fully retired generation ownership is required. The cached API
++  // pointer avoids Signal::Convert's CPU reads of GPU-resident metadata.
++  for (auto* value : arena.values) __atomic_store_n(value, hsa_signal_value_t{1}, __ATOMIC_RELAXED);
++  asm volatile("sfence" ::: "memory");
++  return true;
++#else
++  return false;
++#endif
++}
++
++std::unique_ptr<device::VirtualDevice::GraphFrontierBatch>
++VirtualGPU::prepareGraphFrontierKernels(const std::vector<uint8_t*>& packets,
++    const std::vector<uint64_t>& dependencies, uint64_t completion, bool system_acquire) {
++  if (completion == 0 || !graphSignalPacketsEligible(packets)) return nullptr;
++  auto result = std::make_unique<RocGraphFrontierBatch>();
++  result->packets.reserve(packets.size() + (dependencies.size() + 4) / 5);
++  if (!dependencies.empty()) result->appendWaits(dependencies, 0, false);
++  for (size_t i = 0; i < packets.size(); ++i) {
++    hsa_kernel_dispatch_packet_t packet;
++    std::memcpy(&packet, packets[i], sizeof(packet));
++    packet.completion_signal.handle = i + 1 == packets.size() ? completion : 0;
++    if (i == 0 && system_acquire) {
++      packet.header &= ~(((1u << HSA_PACKET_HEADER_WIDTH_SCACQUIRE_FENCE_SCOPE) - 1)
++                         << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE);
++      packet.header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE;
++    }
++    RocGraphFrontierBatch::Packet copy;
++    std::memcpy(&copy, &packet, sizeof(copy));
++    result->packets.push_back(copy);
++  }
++  return result;
++}
++
++std::unique_ptr<device::VirtualDevice::GraphFrontierBatch>
++VirtualGPU::prepareGraphFrontierJoin(const std::vector<uint64_t>& dependencies,
++                                    uint64_t completion, bool system_release) {
++  if (completion == 0) return nullptr;
++  auto result = std::make_unique<RocGraphFrontierBatch>();
++  result->appendWaits(dependencies, completion, system_release);
++  return result;
++}
++
++void VirtualGPU::publishGraphFrontierPackets(const void* bytes, size_t count) {
++  assert(gpu_queue_ != nullptr && count != 0);
++  const auto* packets = static_cast<const RocGraphFrontierBatch::Packet*>(bytes);
++  const uint64_t mask = gpu_queue_->size - 1;
++  // Reserve/publish bounded chunks; topological launch ordering guarantees each
++  // dependency producer was already published before a consumer can fill a ring.
++  for (size_t done = 0; done < count;) {
++    const size_t chunk = std::min(count - done, static_cast<size_t>(mask));
++    const uint64_t begin = Hsa::queue_add_write_index_screlease(gpu_queue_, chunk);
++    while (begin + chunk - 1 - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {}
++    for (size_t i = 0; i < chunk; ++i) {
++      const auto& source = packets[done + i];
++      auto* slot = &static_cast<RocGraphFrontierBatch::Packet*>(gpu_queue_->base_address)
++                       [(begin + i) & mask];
++      // Publish header last. A struct assignment including a live header can
++      // make a partially copied packet visible before its arguments/dependencies.
++      std::memcpy(reinterpret_cast<char*>(slot) + 4,
++                  reinterpret_cast<const char*>(&source) + 4, sizeof(source) - 4);
++      const auto head = static_cast<uint32_t>(source.words[0]);
++      packet_store_release(reinterpret_cast<uint32_t*>(slot), head & 0xffff, head >> 16);
++      last_write_index_ = begin + i;
++    }
++    Hsa::signal_store_screlease(gpu_queue_->doorbell_signal, begin + chunk - 1);
++    done += chunk;
++  }
++  // Do not call TrackQueueProgress: its completion signal may later be CPU-read.
++  // Every public boundary must explicitly materialize an ordinary host signal.
++  hasPendingDispatch_ = true;
++  setFenceDirty(true);
++  fence_state_ = Device::kCacheStateInvalid;
++  BreakNativeKernelHistory();
++}
++
++void VirtualGPU::publishGraphFrontierBatch(const GraphFrontierBatch& storage) {
++  const auto& batch = static_cast<const RocGraphFrontierBatch&>(storage);
++  publishGraphFrontierPackets(batch.packets.data(), batch.packets.size());
++}
++
++void VirtualGPU::importGraphFrontierPredecessor(void* ordinary_hw_event) {
++  assert(command_ == nullptr && timestamp_ == nullptr);
++  if (ordinary_hw_event != nullptr) {
++    Barriers().AddExternalSignal(static_cast<ProfilingSignal*>(ordinary_hw_event));
++  }
++  dispatchBlockingWait();
++}
++
++void VirtualGPU::materializeGraphFrontier(amd::Marker& command, uint64_t completion) {
++  assert(completion != 0 && command_ == nullptr && timestamp_ == nullptr);
++  profilingBegin(command);
++  hsa_barrier_and_packet_t barrier{};
++  barrier.header = kNopPacketHeader;
++  barrier.dep_signal[0].handle = completion;
++  RocGraphFrontierBatch::Packet packet;
++  std::memcpy(&packet, &barrier, sizeof(packet));
++  publishGraphFrontierPackets(&packet, 1);
++  // Private handles remain outside HwQueueTracker, command HwEvents and IRQs.
++  // This ordinary signal also lets SDMA observe completion of every graph lane.
++  releaseGpuMemoryFence(true);
++  profilingEnd();
++}
++
+ bool VirtualGPU::resetGraphSignalArena(GraphSignalArena& storage,
+                                        amd::AccumulateCommand& command) {
+   auto& arena = static_cast<RocGraphSignalArena&>(storage);
+diff --git a/rocclr/device/rocm/rocvirtual.hpp b/rocclr/device/rocm/rocvirtual.hpp
+index 9c65710..c32975d 100644
+--- a/rocclr/device/rocm/rocvirtual.hpp
++++ b/rocclr/device/rocm/rocvirtual.hpp
+@@ -515,6 +515,19 @@ class VirtualGPU : public device::VirtualDevice {
+   std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) override;
+   bool resetGraphSignalArena(GraphSignalArena& arena, amd::AccumulateCommand& command) override;
+   bool graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const override;
++  bool supportsGraphFrontier() const override;
++  bool resetGraphSignalArenaCpu(GraphSignalArena&) override;
++  std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierKernels(
++      const std::vector<uint8_t*>& packets, const std::vector<uint64_t>& dependencies,
++      uint64_t completion, bool system_acquire) override;
++  std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierJoin(
++      const std::vector<uint64_t>& dependencies, uint64_t completion,
++      bool system_release) override;
++  void publishGraphFrontierBatch(const GraphFrontierBatch&) override;
++  void importGraphFrontierPredecessor(void* ordinary_hw_event) override;
++  void materializeGraphFrontier(amd::Marker& command, uint64_t completion) override;
++  void publishGraphFrontierPackets(const void* packets, size_t count);
++
+   bool dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
+       const std::vector<std::string>& names, amd::AccumulateCommand* command,
+       const std::vector<uint64_t>& dependencies, uint64_t completion) override;
+diff --git a/rocclr/platform/command.cpp b/rocclr/platform/command.cpp
+index feefaf8..af0fe12 100644
+--- a/rocclr/platform/command.cpp
++++ b/rocclr/platform/command.cpp
+@@ -387,11 +387,20 @@ void Command::enqueue() {
+     // The batch update must be lock protected to avoid a race condition
+     // when multiple threads submit/flush/update the batch at the same time
+     ScopedLock sl(queue_->vdev()->execution());
++    if (!defersGraphRetirement() && !consumesGraphFrontier()) {
++      auto* predecessor = queue_->getLastQueuedCommand(false);
++      if (predecessor != nullptr && predecessor->graphFrontier() != 0) {
++        auto* bridge = predecessor->takeGraphFrontierBridge();
++        assert(bridge != nullptr);
++        bridge->enqueue();  // Recursive execution lock; no graph/notification lock.
++        bridge->release();
++      }
++    }
+     queue_->FormSubmissionBatch(this);
+ 
+     // Enqueue flushes, except profiling markers to avoid frequent expensive callbacks
+     if (((type() == 0) && profilingInfo().batch_flush_) || (type() == CL_COMMAND_MARKER) ||
+-        (type() == CL_COMMAND_TASK)) {
++        ((type() == CL_COMMAND_TASK) && !defersGraphRetirement())) {
+       // The current HSA signal tracking logic requires profiling enabled for the markers
+       EnableProfiling();
+       // Update batch head for the current marker. Hence the status of all commands can be
+diff --git a/rocclr/platform/command.hpp b/rocclr/platform/command.hpp
+index c459a80..221a6c3 100644
+--- a/rocclr/platform/command.hpp
++++ b/rocclr/platform/command.hpp
+@@ -385,6 +385,14 @@ class Command : public Event {
+    */
+   virtual void submit(device::VirtualDevice& device) = 0;
+ 
++  // A private graph completion is never an HwEvent. It only chains GPU graph
++  // launches; ordinary submission consumes a preallocated public bridge first.
++  virtual uint64_t graphFrontier() const { return 0; }
++  virtual bool defersGraphRetirement() const { return false; }
++  virtual bool consumesGraphFrontier() const { return false; }
++  virtual Command* takeGraphFrontierBridge() { return nullptr; }
++
++
+   //! Release the resources associated with this event.
+   virtual void releaseResources();
+ 
+@@ -1498,6 +1506,97 @@ class AccumulateCommand : public Command {
+   virtual void submit(device::VirtualDevice& device) { device.submitAccumulate(*this); }
+ };
+ 
++// Each launch preallocates its bridge, but the bridge takes a reference to the
++// launch only when transferred into the submission batch. There is no cycle.
++class GraphFrontierMarker final : public Marker {
++  std::atomic<Command*> owner_{nullptr};
++  uint64_t frontier_ = 0;
++  static void completed(cl_event, cl_int status, void* data) {
++    auto* self = static_cast<GraphFrontierMarker*>(data);
++    if (status == CL_COMPLETE) {
++      if (auto* owner = self->owner_.exchange(nullptr)) owner->release();
++    }
++  }
++ public:
++  explicit GraphFrontierMarker(HostQueue& queue) : Marker(queue, false) {}
++  bool initialize() { return event().setCallback(CL_COMPLETE, completed, this, false); }
++  void arm(Command& owner) {
++    assert(owner_ == nullptr && owner.graphFrontier() != 0);
++    owner.retain();
++    owner_.store(&owner);
++    frontier_ = owner.graphFrontier();
++  }
++  bool consumesGraphFrontier() const override { return true; }
++  void submit(device::VirtualDevice& device) override {
++    device.materializeGraphFrontier(*this, frontier_);
++  }
++  void releaseResources() override {
++    // A failed completion is not proof that the private waiter drained. Keep
++    // its producer alive in that case, even if ordinary batch cleanup runs.
++    if (status() == CL_COMPLETE) {
++      if (auto* owner = owner_.exchange(nullptr)) owner->release();
++    }
++    Marker::releaseResources();
++  }
++};
++
++class GraphFrontierCommand final : public AccumulateCommand {
++  GraphFrontierMarker* bridge_;
++  std::atomic<Event*> predecessor_{nullptr};
++  std::function<void(bool)> release_owner_;
++  uint64_t frontier_;
++  bool published_ = false;
++  bool resources_released_ = false;
++  static void completed(cl_event, cl_int status, void* data) {
++    auto* self = static_cast<GraphFrontierCommand*>(data);
++    // Once this launch retires, its reads of the prior token have retired too.
++    // Dropping this edge here bounds chains across ordinary batch watermarks.
++    // The launch's OWN generation remains leased until its final reference.
++    if (status == CL_COMPLETE) {
++      if (auto* predecessor = self->predecessor_.exchange(nullptr)) predecessor->release();
++    }
++  }
++ public:
++  GraphFrontierCommand(HostQueue& queue, uint64_t frontier,
++                       std::function<void(bool)> release_owner)
++      : AccumulateCommand(queue), bridge_(new GraphFrontierMarker(queue)),
++        release_owner_(std::move(release_owner)), frontier_(frontier) {}
++  bool initialize() {
++    return bridge_->initialize() && event().setCallback(CL_COMPLETE, completed, this, false);
++  }
++  void setPredecessor(Event* predecessor) {
++    assert(predecessor_ == nullptr);
++    if (predecessor != nullptr) predecessor->retain();
++    predecessor_.store(predecessor);
++  }
++  void markPublished() { published_ = true; }
++  uint64_t graphFrontier() const override { return frontier_; }
++  bool defersGraphRetirement() const override { return true; }
++  Command* takeGraphFrontierBridge() override {
++    assert(bridge_ != nullptr);
++    auto* bridge = bridge_;
++    bridge_ = nullptr;
++    bridge->arm(*this);
++    return bridge;
++  }
++  void submit(device::VirtualDevice&) override {}  // Packets already published atomically.
++  void releaseResources() override {
++    if (resources_released_) return;
++    resources_released_ = true;
++    const bool safe = !published_ || status() == CL_COMPLETE;
++    if (safe) {
++      if (auto* predecessor = predecessor_.exchange(nullptr)) predecessor->release();
++    }
++    if (bridge_ != nullptr) {
++      bridge_->release();
++      bridge_ = nullptr;
++    }
++    AccumulateCommand::releaseResources();
++    // This may destroy GraphExec, so do not consult graph/generation afterward.
++    release_owner_(safe);
++  }
++};
++
+ /*! \brief  Maps CL objects created from external ones and syncs the contents (blocking).
+  *
+  */
+@@ -2027,6 +2126,8 @@ union ComputeCommand {
+   ExternalSemaphoreCmd cmd9;
+   Marker cmd10;
+   AccumulateCommand cmd11;
++  GraphFrontierCommand graphFrontierCommand;
++  GraphFrontierMarker graphFrontierMarker;
+   AcquireExtObjectsCommand cmd13;
+   ReleaseExtObjectsCommand cmd14;
+   PerfCounterCommand cmd15;
+diff --git a/rocclr/platform/commandqueue.cpp b/rocclr/platform/commandqueue.cpp
+index f197a3f..a7623fd 100644
+--- a/rocclr/platform/commandqueue.cpp
++++ b/rocclr/platform/commandqueue.cpp
+@@ -143,6 +143,12 @@ bool HostQueue::terminate() {
+ 
+ void HostQueue::FlushSubmissionBatch() {
+   if (size_ > DEBUG_CLR_MAX_BATCH_SIZE) {
++    if (lastEnqueueCommand_ != nullptr && lastEnqueueCommand_->graphFrontier() != 0) {
++      auto* bridge = lastEnqueueCommand_->takeGraphFrontierBridge();
++      bridge->enqueue();
++      bridge->release();
++      return;
++    }
+     auto marker = new Marker(*this, false);
+     if (marker != nullptr) {
+       marker->enqueue();
+diff --git a/rocclr/utils/flags.hpp b/rocclr/utils/flags.hpp
+index d1bab74..3cd9b82 100644
+--- a/rocclr/utils/flags.hpp
++++ b/rocclr/utils/flags.hpp
+@@ -169,6 +169,8 @@ release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
+         "Diagnostic: import graph dependencies in the next captured batch")  \
+ release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
+         "Diagnostic: fail a final-kernel batch after a published prefix.")    \
++release(bool, GPU_GRAPH_DIAGNOSTIC_FRONTIER, false,                         \
++        "Diagnostic: private GPU graph completion with deferred host retirement") \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS, false,                    \
+         "Diagnostic: graph-owned GPU-local dependency signals")             \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST, false,                \

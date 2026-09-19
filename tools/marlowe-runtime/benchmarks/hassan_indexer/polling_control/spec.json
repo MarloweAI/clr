@@ -1,0 +1,125 @@
+{
+  "external_sources": {
+    "/sgl-workspace/aiter/aiter/tuned_gemm.py": "8408a8914c76608d153c132d087e4cd6a614371bc71815cb98045f904b14d3a2",
+    "/sgl-workspace/aiter/aiter/ops/flydsl/gemm_kernels.py": "32cd04fe42d188e02c28c1748e11c9a0ca009e6346aa8c38b5640f4b79fa205d"
+  },
+  "controls": {
+    "AMD_DIRECT_DISPATCH": "1",
+    "AMD_LOG_LEVEL": "0",
+    "AMD_LOG_MASK": "0",
+    "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+    "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+    "GPU_NATIVE_EVENT_TRACE": "0",
+    "GPU_STREAMOPS_CP_WAIT": "0",
+    "GPU_MAX_HW_QUEUES": "4",
+    "GPU_NATIVE_EVENT_WAIT": "0",
+    "GPU_GRAPH_NODE_COUNT_PLACEMENT": "0",
+    "HIP_VISIBLE_DEVICES": "0",
+    "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+    "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "0",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "0",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "0",
+    "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "0"
+  },
+  "libraries": {
+    "libamdhip64": "f1043337461c8e54ee135e95fa979a7d0e4344676ad5b0554652f844f8f098ac",
+    "libhsa-runtime64": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+  },
+  "cases": {
+    "graph-serial-g1": {
+      "mode": 0,
+      "group": 1,
+      "events": false,
+      "cp": 0
+    },
+    "graph-events-g1": {
+      "mode": 0,
+      "group": 1,
+      "events": true,
+      "cp": 0
+    },
+    "graph-serial-g50": {
+      "mode": 0,
+      "group": 50,
+      "events": false,
+      "cp": 0
+    },
+    "graph-events-g50": {
+      "mode": 0,
+      "group": 50,
+      "events": true,
+      "cp": 0
+    },
+    "split-serial": {
+      "mode": 1,
+      "group": 1,
+      "events": false,
+      "cp": 0
+    },
+    "split-events": {
+      "mode": 2,
+      "group": 1,
+      "events": false,
+      "cp": 0
+    },
+    "split-poll": {
+      "mode": 3,
+      "group": 1,
+      "events": false,
+      "cp": 0
+    },
+    "split-cp": {
+      "mode": 3,
+      "group": 1,
+      "events": false,
+      "cp": 1
+    }
+  },
+  "orders": [
+    [
+      "graph-serial-g1",
+      "graph-events-g1",
+      "graph-serial-g50",
+      "graph-events-g50",
+      "split-serial",
+      "split-events",
+      "split-poll",
+      "split-cp"
+    ],
+    [
+      "split-cp",
+      "split-poll",
+      "split-events",
+      "split-serial",
+      "graph-events-g50",
+      "graph-serial-g50",
+      "graph-events-g1",
+      "graph-serial-g1"
+    ],
+    [
+      "split-serial",
+      "split-events",
+      "split-poll",
+      "split-cp",
+      "graph-serial-g1",
+      "graph-events-g1",
+      "graph-serial-g50",
+      "graph-events-g50"
+    ],
+    [
+      "graph-events-g50",
+      "graph-serial-g50",
+      "graph-events-g1",
+      "graph-serial-g1",
+      "split-cp",
+      "split-poll",
+      "split-events",
+      "split-serial"
+    ]
+  ]
+}

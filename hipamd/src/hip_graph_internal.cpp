@@ -224,6 +224,9 @@ hipError_t Graph::ScheduleNodes() {
       segments_.clear();
       node_to_segment_id_.clear();
       segments_per_level_.clear();
+      assignment_segments_per_level_.clear();
+      assignment_device_id_ = -1;
+      entry_fused_device_id_ = -1;
       max_dependency_level_ = -1;
       // Disable segment scheduling for this graph permanently
       use_segment_scheduling_ = false;
@@ -401,6 +404,9 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
   max_dependency_level_ = -1;
   max_streams_ = 1;
   segments_per_level_.clear();
+  assignment_segments_per_level_.clear();
+  assignment_device_id_ = -1;
+  entry_fused_device_id_ = -1;
 
   // Initialize in-degree for each segment and enqueue root segments
   for (size_t i = 0; i < segments_.size(); ++i) {
@@ -444,6 +450,43 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
         // Add segment to its dependency level
         segments_per_level_[edge_segment.dependency_level].push_back(edge_id);
       }
+    }
+  }
+
+  // Keep submission order unchanged. This empirical placement policy is only
+  // qualified for a flat graph whose nodes all belong to one known device.
+  if (GPU_GRAPH_NODE_COUNT_PLACEMENT && !segments_.empty() &&
+      !segments_.front().nodes.empty()) {
+    const int device_id = segments_.front().nodes.front()->GetDeviceId();
+    const bool single_device = device_id >= 0 &&
+        std::all_of(segments_.begin(), segments_.end(), [device_id](const Segment& segment) {
+          return segment.child_graph_ptr == nullptr && !segment.nodes.empty() &&
+              std::all_of(segment.nodes.begin(), segment.nodes.end(), [device_id](Node node) {
+                return node->GetDeviceId() == device_id;
+              });
+        });
+    if (single_device) {
+      assignment_device_id_ = device_id;
+      assignment_segments_per_level_ = segments_per_level_;
+      for (auto& level : assignment_segments_per_level_) {
+        std::stable_sort(level.second.begin(), level.second.end(), [this](int lhs, int rhs) {
+          return segments_[lhs].nodes.size() > segments_[rhs].nodes.size();
+        });
+      }
+    }
+  }
+
+  if (!segments_.empty() && !segments_.front().nodes.empty()) {
+    const int device_id = segments_.front().nodes.front()->GetDeviceId();
+    if (device_id >= 0 &&
+        std::all_of(segments_.begin(), segments_.end(), [device_id](const Segment& segment) {
+          return segment.child_graph_ptr == nullptr && !segment.nodes.empty() &&
+              std::all_of(segment.nodes.begin(), segment.nodes.end(), [device_id](Node node) {
+                return node->GetDeviceId() == device_id &&
+                    node->GetType() == hipGraphNodeTypeKernel && node->GraphCaptureEnabled();
+              });
+        })) {
+      entry_fused_device_id_ = device_id;
     }
   }
 
@@ -928,7 +971,17 @@ hipError_t GraphExec::Init() {
     // the number of extra streams to create
     for (auto const& [dev_id, num_streams] : max_streams_dev_) {
       if (num_streams > 0) {
-        status = CreateStreams(num_streams, dev_id);
+        // Queue pooling can assign one candidate the same hardware queue as
+        // the launch stream. Give UpdateStreams a bounded spare so it can
+        // select independent queues before using its collision fallback.
+        const bool add_spare = use_segment_scheduling_ && dev_id == instantiateDeviceId_ &&
+                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES;
+        status = CreateStreams(num_streams + (add_spare ? 1u : 0u), dev_id);
+        if (status == hipErrorOutOfMemory && add_spare) {
+          // The spare is optional. CreateStreams cleans up on failure, so
+          // retry the required count before rejecting an otherwise valid graph.
+          status = CreateStreams(num_streams, dev_id);
+        }
         if (status != hipSuccess) {
           return status;
         }
@@ -1414,9 +1467,40 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
   // Map to track the last enqueued command for each segment for dependency tracking
   // This is critical for handling cross-level dependencies with stream reuse
   std::unordered_map<int, amd::Command*> segment_last_command;
+  // Non-owning aliases into segment_last_command, updated in actual enqueue order.
+  // Several independent segments can share a level and a logical stream.
+  std::unordered_map<hip::Stream*, amd::Command*> stream_last_command_map;
+
+  struct RetainedFrontier {
+    amd::Command* event = nullptr;
+    ~RetainedFrontier() { if (event != nullptr) event->release(); }
+  } frontier;
+  std::unordered_set<hip::Stream*> deferred_entry_streams;
+  const bool deferred_entry = amd::IS_HIP && AMD_DIRECT_DISPATCH &&
+      !streams.empty() && max_streams_dev_.size() == 1 &&
+      entry_fused_device_id_ == launch_stream->DeviceId() &&
+      !launch_stream->properties().test(CL_QUEUE_PROFILING_ENABLE) &&
+      !amd::Agent::shouldPostEventEvents() &&
+      !amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) &&
+      !amd::activity_prof::IsEnabled(::OP_ID_COPY) &&
+      !amd::activity_prof::IsEnabled(::OP_ID_BARRIER);
+
+  // Current root batch state is checked every replay (node enable/disable can change).
+  auto rootBatchEligible = [&](int id) {
+    if (!deferred_entry) return false;
+    const auto& segment = segments_[id];
+    auto it = segmentBatches_.find(id);
+    if (segment.nodes.empty() || it == segmentBatches_.end() ||
+        it->second.packet_batches.empty() || it->second.node_capture_status.empty() ||
+        !it->second.node_capture_status.front() ||
+        !segment.nodes.front()->GraphCaptureEnabled()) return false;
+    const auto& batch = it->second.packet_batches.front();
+    return batch.disabledNodeCount == 0 && !batch.dispatchPackets.empty() &&
+        batch.dispatchPackets.size() == batch.dispatchKernelNames.size();
+  };
 
   // Process segments level by level using the pre-calculated max_dependency_level_
-  for (int level = 0; level <= max_dependency_level_; ++level) {
+  for (int level = 0; level <= max_dependency_level_ && status == hipSuccess; ++level) {
     auto level_it = segments_per_level_.find(level);
     if (level_it == segments_per_level_.end()) {
       continue;
@@ -1424,8 +1508,61 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
 
     const auto& segments_at_level = level_it->second;
 
-    // Assign streams to segments at this level
-    AssignStreamsToSegments(segments_at_level, launch_stream, streams, segment_to_stream);
+    // Only use the cached policy on the qualified single-device launch path.
+    // Empty streams are also used by child/multi-device paths; preserve those.
+    const std::vector<int>* assignment_order = &segments_at_level;
+    if (!streams.empty() && max_streams_dev_.size() == 1 &&
+        assignment_device_id_ == launch_stream->DeviceId()) {
+      auto assignment_it = assignment_segments_per_level_.find(level);
+      if (assignment_it != assignment_segments_per_level_.end()) {
+        assignment_order = &assignment_it->second;
+      }
+    }
+    AssignStreamsToSegments(*assignment_order, launch_stream, streams, segment_to_stream);
+
+    // Graph roots must follow work already queued on the application launch
+    // stream, including copies and memory initialization outside this graph.
+    // Snapshot that frontier before any graph packets, then fork to each distinct
+    // logical side stream. Single-root/all-launch-stream graphs need no fork.
+    if (level == 0 && segments_at_level.size() > 1 &&
+        std::any_of(segments_at_level.begin(), segments_at_level.end(),
+                    [&](int id) { return segment_to_stream.at(id) != launch_stream; })) {
+      constexpr bool kRetainCommand = true;
+      frontier.event = launch_stream->getLastQueuedCommand(kRetainCommand);
+      auto predecessor = frontier.event;
+      if (predecessor != nullptr) {
+        // Finish producer notification before any consumer lock or graph packet.
+        if (deferred_entry && !predecessor->notifyCmdQueue(false)) {
+          if (out_status != nullptr) *out_status = hipErrorOutOfMemory;
+          return nullptr;
+        }
+        auto hardware_event = predecessor->NotifyEvent() != nullptr
+            ? predecessor->NotifyEvent()->HwEvent() : predecessor->HwEvent();
+        if (deferred_entry && hardware_event == nullptr && predecessor->status() != CL_COMPLETE) {
+          if (out_status != nullptr) *out_status = hipErrorUnknown;
+          return nullptr;
+        }
+        amd::Command::EventWaitList entry_wait_list{predecessor};
+        for (int id : segments_at_level) {
+          auto stream = segment_to_stream.at(id);
+          // Reuse the tail map to deduplicate root streams; actual enqueues below
+          // replace these null placeholders with the owning segment's command.
+          bool first_root = stream_last_command_map.emplace(stream, nullptr).second;
+          if (stream != launch_stream && first_root) {
+            if (hardware_event != nullptr && rootBatchEligible(id)) {
+              deferred_entry_streams.insert(stream);
+              continue;
+            }
+            // Use ordinary marker fence/cache scope, as the classic graph fork
+            // does. External producers cannot assume kCacheStateIgnore.
+            auto marker = new amd::Marker(*stream, true, entry_wait_list);
+            marker->enqueue();
+            marker->release();
+          }
+        }
+        // Frontier also stays retained until every deferred root has been visited.
+      }
+    }
 
     // Process each segment at this level
     for (int segment_id : segments_at_level) {
@@ -1466,58 +1603,24 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
       // Create accumulate command for this segment
       amd::AccumulateCommand* accumulate = new amd::AccumulateCommand(*current_stream, {}, nullptr);
 
-      // Enqueue this segment using the helper function
+      if (deferred_entry_streams.erase(current_stream) != 0) {
+        accumulate->setGraphEntryEvent(frontier.event);
+      }
+
       status = EnqueueSegment(segment, current_stream, accumulate);
-
-      if (status != hipSuccess) {
-        accumulate->release();
-        // Clean up any previously enqueued commands
-        for (auto& pair : segment_last_command) {
-          if (pair.second != nullptr) {
-            pair.second->release();
-          }
-        }
-        if (out_status != nullptr) {
-          *out_status = status;
-        }
-        return nullptr;
-      }
-
-      // Do not release as this is released at the end
+      // Even failure may have published dependency/kernel packets. Retire that
+      // prefix once, then join ALL submitted side tails before Run's graph-release
+      // callback can run. The ordinary success path uses the identical tail join.
       accumulate->enqueue();
-
       segment_last_command[segment_id] = accumulate;
+      stream_last_command_map[current_stream] = accumulate;
+      if (status != hipSuccess) break;
     }
   }
 
-  // Synchronize all streams with work back to launch_stream
-  // Build a map of stream to last command by collecting from the highest-level segment on each
-  // stream This is critical because unordered_map iteration order is undefined, so we must
-  // explicitly track dependency levels to ensure we wait on the last command (highest level) on
-  // each stream
-  std::unordered_map<hip::Stream*, amd::Command*> stream_last_command_map;
-  std::unordered_map<hip::Stream*, int> stream_max_level; // Track max dependency level per stream
-
-  for (const auto& pair : segment_last_command) {
-    int seg_id = pair.first;
-    amd::Command* cmd = pair.second;
-    auto stream_it = segment_to_stream.find(seg_id);
-    if (stream_it != segment_to_stream.end()) {
-      hip::Stream* stream = stream_it->second;
-      int seg_dependency_level = segments_[seg_id].dependency_level;
-
-      // Only update if this segment is at a strictly higher level
-      // Using strict > ensures deterministic behavior when multiple segments
-      // are at the same level on the same stream
-      auto level_it = stream_max_level.find(stream);
-      if (level_it == stream_max_level.end() ||
-          seg_dependency_level > level_it->second) {
-        stream_max_level[stream] = seg_dependency_level;
-        stream_last_command_map[stream] = cmd;
-      }
-    }
-  }
-
+  // Join the actual last submitted segment on every logical stream. Dependency
+  // level alone cannot identify the tail when several segments share that level.
+  // Aliases remain alive through the owning per-segment map and existing cleanup.
   amd::Command::EventWaitList final_wait_list;
   for (const auto& pair : stream_last_command_map) {
     hip::Stream* stream = pair.first;
@@ -1549,7 +1652,7 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
   // This is to prevent release in cleanup loop, this determines graph execution completion
   amd::Command* last_command = nullptr;
   auto launch_stream_it = stream_last_command_map.find(launch_stream);
-  if (launch_stream_it != stream_last_command_map.end()) {
+  if (status == hipSuccess && launch_stream_it != stream_last_command_map.end()) {
     last_command = launch_stream_it->second;
     // Find the segment that produced this command and remove it from cleanup
     for (auto it = segment_last_command.begin(); it != segment_last_command.end(); ) {

@@ -1,0 +1,30 @@
+{
+  "job": 53220,
+  "hsa_sha256": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4",
+  "source": {
+    "packet_wait.cpp": "8edeac92b0fde5ecbff3484b86a4144ec202003b567b43e2d3ddef2609e233c1",
+    "probes.cpp": "00f1fcdbda456c7717cfdf6c9491f509300e87e45e9d3a81fcedb1f45df44826",
+    "audit.py": "9d51a3b2b3d490b2f45ff71612402650666f42d4125ede7ecd760aaa3c69624f"
+  },
+  "original_manifest": {
+    "hsa_sha256": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4",
+    "sources": {
+      "PILOT_NOTES.md": "917ffe1e353c66758863b55789dd4ea619c118f53efdac6030962c477eed0d32",
+      "PLAN.md": "f1c7bdec27504a2caa3a8de54bb8c29956b1c68d4429350797d2f19ee82829e8",
+      "audit.py": "9d51a3b2b3d490b2f45ff71612402650666f42d4125ede7ecd760aaa3c69624f",
+      "packet_wait.cpp": "8edeac92b0fde5ecbff3484b86a4144ec202003b567b43e2d3ddef2609e233c1",
+      "probes.cpp": "00f1fcdbda456c7717cfdf6c9491f509300e87e45e9d3a81fcedb1f45df44826",
+      "run.sh": "84981bd6b8e423ed658e0bbe32d48dce51ed8185a978432907b06e911f6bf295",
+      "submit.sh": "6cba2df2e1ca0abd1f7ed5d471b87c0497fcd673a2c9955497337ff672456f9f"
+    }
+  },
+  "artifacts": {
+    "packet_wait": "521320995087784d834ee9298ca7c5c0c384d022d9c464fbe7959e3f9d36f140",
+    "probes.hsaco": "797613cc1a1b09969d9be59b6e6714c3cd0bc954a175a1e2cca8cea7b1e282c4",
+    "isa.txt": "a9399bcb23ba047809966645fbc6dfdf114cab59d3766f7abf8c8f0a4caeed97",
+    "code-object-notes.txt": "564da93439244aacf5b49affa6b66062592ddd9a07b2ed359f395c9e419b2228",
+    "analysis.json": "ef37e8663f360633dbe12e0e5164551243e62d07d6b0c38d95e5419c308f448a",
+    "trials.csv": "054d5a8488c75ff12b7b2e0b2e870469c255bc743787c98780d7fa139e8f6cfd",
+    "addresses.csv": "2c3814030548620c801d79cf4eda9c38fca729979f29fa8d7f3e87f4aafe1609"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "correctness": "PASS",
+  "capability": "FAIL",
+  "trials": 64,
+  "samples": 40608,
+  "publication_wraps": 1,
+  "queue_ids": [
+    1
+  ],
+  "cells": {
+    "one_block/serial": {
+      "trials": 16,
+      "layers": 72,
+      "concurrent_layers": 0
+    },
+    "one_block/parallel": {
+      "trials": 16,
+      "layers": 72,
+      "concurrent_layers": 0
+    },
+    "qk_geometry/serial": {
+      "trials": 16,
+      "layers": 72,
+      "concurrent_layers": 0
+    },
+    "qk_geometry/parallel": {
+      "trials": 16,
+      "layers": 72,
+      "concurrent_layers": 0
+    }
+  },
+  "actual_overlap": false,
+  "interpretation": "Long probe capability only; not original Q/K performance or runtime qualification."
+}

@@ -1,0 +1,3 @@
+# Independent source review
+
+Reviewer: countdown_contract_review, xhigh Codex; no GPU jobs delegated. Reviewed same-object mode mapping, reset timing, pointer lifetime, complete drain before reuse, uncached publication, and pinned API contract. Initial finding fixed before freeze: preserve volatile hsa_signal_value_t* instead of aliasing long long*. Added lock-free/size assertion. Final frozen replay SHA466830070db6601d2cf0a35771cb7e011023d9ed2ad292949afbf91c4339cd8e and source manifest0f00cc3c verified by reviewer. No correctness blocker to bounded diagnostic. Result audits by root on remote and local artifacts; independent post-run recomputation has not yet been requested. No production or generic concurrent-runtime reset qualification.

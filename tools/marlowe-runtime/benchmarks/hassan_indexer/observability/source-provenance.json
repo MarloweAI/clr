@@ -1,0 +1,87 @@
+{
+  "official_tag": "rocm-7.2.4",
+  "commit": "97f5574fe2fdc7bef44fb01545347912ee9f1779",
+  "source_only_not_deployed_build_receipt": true,
+  "files": [
+    {
+      "path": "projects/rocprofiler-sdk/samples/thread_trace/agent.cpp",
+      "sha256": "cd6407bf97460f92eed0d73ef90ec7503779a0eec57aab2f8c6a7aee416987c4",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/samples/thread_trace/agent.cpp"
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/agent.h",
+      "sha256": "469eedd5c0c8dbeb604a9dbb8803757a9ff706080f30239809c6f1f9e00b8bbf",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/agent.h",
+      "copied_sdk_path": "/home/sashawork/dev/amd-runtime-production/counter-sdk/opt/rocm-7.2.4/include/rocprofiler-sdk/experimental/thread-trace/agent.h",
+      "copied_sdk_sha256": "469eedd5c0c8dbeb604a9dbb8803757a9ff706080f30239809c6f1f9e00b8bbf",
+      "copied_sdk_matches_tag": true
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/core.h",
+      "sha256": "2a647b5bcb9df3fae8281a5bb173808928caaed103ae3b10d4cc14d9c8f3110e",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/core.h",
+      "copied_sdk_path": "/home/sashawork/dev/amd-runtime-production/counter-sdk/opt/rocm-7.2.4/include/rocprofiler-sdk/experimental/thread-trace/core.h",
+      "copied_sdk_sha256": "2a647b5bcb9df3fae8281a5bb173808928caaed103ae3b10d4cc14d9c8f3110e",
+      "copied_sdk_matches_tag": true
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/trace_decoder_types.h",
+      "sha256": "1d3896cde4e533fb21a3ef74d3978a021465b7b0a456f5e40cc023c68af061fa",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/include/rocprofiler-sdk/experimental/thread-trace/trace_decoder_types.h",
+      "copied_sdk_path": "/home/sashawork/dev/amd-runtime-production/counter-sdk/opt/rocm-7.2.4/include/rocprofiler-sdk/experimental/thread-trace/trace_decoder_types.h",
+      "copied_sdk_sha256": "1d3896cde4e533fb21a3ef74d3978a021465b7b0a456f5e40cc023c68af061fa",
+      "copied_sdk_matches_tag": true
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/include/rocprofiler-sdk/pc_sampling.h",
+      "sha256": "cf9e8e9e9a2e886884f6ee2439551d0c162c9c28140606119a2b6e4a6e459718",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/include/rocprofiler-sdk/pc_sampling.h",
+      "copied_sdk_path": "/home/sashawork/dev/amd-runtime-production/counter-sdk/opt/rocm-7.2.4/include/rocprofiler-sdk/pc_sampling.h",
+      "copied_sdk_sha256": "cf9e8e9e9a2e886884f6ee2439551d0c162c9c28140606119a2b6e4a6e459718",
+      "copied_sdk_matches_tag": true
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/thread_trace/core.cpp",
+      "sha256": "0f87e231df7b4fc3f4ccad0448c44f57700ec301ddd41d92c9e1b8aacfc06e53",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/thread_trace/core.cpp"
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/thread_trace/service.cpp",
+      "sha256": "4e2e3b026773b9d5bab0c5eb77ac460d300db494950fbb7eaaa0cbf5922d94ca",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/lib/rocprofiler-sdk/thread_trace/service.cpp"
+    },
+    {
+      "path": "projects/rocprofiler-sdk/source/share/rocprofiler-sdk/counter_defs.yaml",
+      "sha256": "a4f129653c1f1ea35458a09c81eb8f6e2be3be62661ec5bbd4b5aadceb11a2e5",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocprofiler-sdk/source/share/rocprofiler-sdk/counter_defs.yaml",
+      "copied_sdk_path": "/home/sashawork/dev/amd-runtime-production/counter-sdk/opt/rocm-7.2.4/share/rocprofiler-sdk/counter_defs.yaml",
+      "copied_sdk_sha256": "a4f129653c1f1ea35458a09c81eb8f6e2be3be62661ec5bbd4b5aadceb11a2e5",
+      "copied_sdk_matches_tag": true
+    },
+    {
+      "path": "projects/rocr-runtime/libhsakmt/src/perfctr.c",
+      "sha256": "61f46bd8cb9e84f01a5224ba43bcad7d81f7f2e3fbbdb8901f0b6f48553a2a5d",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocr-runtime/libhsakmt/src/perfctr.c"
+    },
+    {
+      "path": "projects/rocr-runtime/runtime/hsa-runtime/core/driver/kfd/amd_kfd_driver.cpp",
+      "sha256": "c6f961251ebc0ceb3da5107964fa34bb5dacf0d3973a0e179fcb06cf5ca98cb3",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocr-runtime/runtime/hsa-runtime/core/driver/kfd/amd_kfd_driver.cpp"
+    },
+    {
+      "path": "projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp",
+      "sha256": "c39d5f922e855ce57d3c1903beef325e6004431c2ee66ae000aac72a0e5999da",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp"
+    },
+    {
+      "path": "projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp",
+      "sha256": "d54a0e36a3403c13f4af0b0fc6552dfcf24a2d42df7e36d23752cb1e00c11469",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocr-runtime/runtime/hsa-runtime/core/runtime/runtime.cpp"
+    },
+    {
+      "path": "projects/rocr-runtime/runtime/hsa-runtime/core/util/lnx/os_linux.cpp",
+      "sha256": "3c19b3f8aff5654316377ba2a29bb0f83387586d0c94ac24a5e5770e32a2f5fa",
+      "url": "https://github.com/ROCm/rocm-systems/blob/97f5574fe2fdc7bef44fb01545347912ee9f1779/projects/rocr-runtime/runtime/hsa-runtime/core/util/lnx/os_linux.cpp"
+    }
+  ]
+}

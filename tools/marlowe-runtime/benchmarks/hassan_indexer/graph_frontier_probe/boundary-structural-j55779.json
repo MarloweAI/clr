@@ -1,0 +1,86 @@
+{
+  "preflight-j55779/f1-q4-lane-fault0-batch1000/stderr.log": {
+    "launches": 4,
+    "sealed_tails": 8,
+    "public_bridges": 4,
+    "first_queue_entries": 8
+  },
+  "preflight-j55779/f1-q4-boundary-fault0-batch1000/stderr.log": {
+    "launches": 1139,
+    "sealed_tails": 2278,
+    "public_bridges": 6,
+    "first_queue_entries": 2278
+  },
+  "preflight-j55779/f1-q4-lane-fault3-batch1000/stderr.log": {
+    "launches": 1,
+    "sealed_tails": 2,
+    "public_bridges": 1,
+    "first_queue_entries": 2
+  },
+  "preflight-j55779/f1-q4-burst-fault0-batch8/stderr.log": {
+    "launches": 64,
+    "sealed_tails": 128,
+    "public_bridges": 8,
+    "first_queue_entries": 128
+  },
+  "preflight-j55779/f1-q4-burst-fault0-batch1000/stderr.log": {
+    "launches": 64,
+    "sealed_tails": 128,
+    "public_bridges": 2,
+    "first_queue_entries": 128
+  },
+  "preflight-j55779/f1-q4-boundary-fault0-batch8/stderr.log": {
+    "launches": 1139,
+    "sealed_tails": 2278,
+    "public_bridges": 130,
+    "first_queue_entries": 2278
+  },
+  "capacity-j55779/burst-cap32/stderr.log": {
+    "launches": 32,
+    "sealed_tails": 64,
+    "public_bridges": 2,
+    "first_queue_entries": 64
+  },
+  "capacity-j55779/alias-cap1024/stderr.log": {
+    "launches": 64,
+    "sealed_tails": 128,
+    "public_bridges": 1,
+    "first_queue_entries": 128
+  },
+  "capacity-j55779/burst-cap8/stderr.log": {
+    "launches": 8,
+    "sealed_tails": 16,
+    "public_bridges": 2,
+    "first_queue_entries": 16
+  },
+  "capacity-j55779/burst-cap2/stderr.log": {
+    "launches": 2,
+    "sealed_tails": 4,
+    "public_bridges": 2,
+    "first_queue_entries": 4
+  },
+  "capacity-j55779/idle-cap8/stderr.log": {
+    "launches": 1,
+    "sealed_tails": 2,
+    "public_bridges": 1,
+    "first_queue_entries": 2
+  },
+  "capacity-j55779/boundary-cap1024/stderr.log": {
+    "launches": 1139,
+    "sealed_tails": 2278,
+    "public_bridges": 6,
+    "first_queue_entries": 2278
+  },
+  "capacity-j55779/hostfed-cap2/stderr.log": {
+    "launches": 2,
+    "sealed_tails": 4,
+    "public_bridges": 1,
+    "first_queue_entries": 4
+  },
+  "capacity-j55779/boundary-cap8/stderr.log": {
+    "launches": 273,
+    "sealed_tails": 546,
+    "public_bridges": 54,
+    "first_queue_entries": 546
+  }
+}

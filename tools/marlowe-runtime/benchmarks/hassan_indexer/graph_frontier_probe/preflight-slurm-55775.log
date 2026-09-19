@@ -1,0 +1,25 @@
+/usr/bin/bash: /opt/venv/lib/python3.12/site-packages/torch/lib/libtinfo.so.6: no version information available (required by /usr/bin/bash)
+/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp:12:234: error: variable 'e' declared with deduced type 'auto' cannot appear in its own initializer
+   12 |  void* args[]={&data};hipKernelNodeParams p{};p.func=(void*)consume;p.gridDim=dim3(1);p.blockDim=dim3(64);p.kernelParams=args;hipGraphNode_t n;H(hipGraphAddKernelNode(&n,g[1],nullptr,0,&p));for(int i=0;i<2;++i)H(hipGraphInstantiate(&e[i],g[i],nullptr,nullptr,0));
+      |                                                                                                                                                                                                                                          ^
+/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp:13:19: error: variable 'e' declared with deduced type 'auto' cannot appear in its own initializer
+   13 |  H(hipGraphLaunch(e[0],stream));H(hipGraphLaunch(e[1],stream));int result[3];H(hipMemcpyAsync(result,data,sizeof(result),hipMemcpyDeviceToHost,stream));H(hipStreamSynchronize(stream));bool ok=result[0]==17&&result[1]==19&&result[2]==146;
+      |                   ^
+/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp:13:50: error: variable 'e' declared with deduced type 'auto' cannot appear in its own initializer
+   13 |  H(hipGraphLaunch(e[0],stream));H(hipGraphLaunch(e[1],stream));int result[3];H(hipMemcpyAsync(result,data,sizeof(result),hipMemcpyDeviceToHost,stream));H(hipStreamSynchronize(stream));bool ok=result[0]==17&&result[1]==19&&result[2]==146;
+      |                                                  ^
+/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp:14:45: error: variable 'e' declared with deduced type 'auto' cannot appear in its own initializer
+   14 |  for(int i=0;i<2;++i){H(hipGraphExecDestroy(e[i]));H(hipGraphDestroy(g[i]));}H(hipStreamDestroy(stream));H(hipFree(data));std::printf("{\"passed\":%s,\"delayed_branch\":%d,\"values\":[%d,%d,%d],\"expected\":[17,19,146]}\n",ok?"true":"false",delayed,result[0],result[1],result[2]);return ok?0:3;
+      |                                             ^
+4 errors generated when compiling for gfx950.
+failed to execute:/opt/rocm-7.2.4/lib/llvm/bin/clang++  --offload-arch=gfx950 --driver-mode=g++ --hip-link  -O2 -std=c++17 -x hip /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp -o "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/transition-j55775/bins/transition"
+Traceback (most recent call last):
+  File "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/boundary_transition.py", line 56, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/boundary_transition.py", line 43, in main
+    subprocess.run(['/opt/rocm/bin/hipcc','-O2','-std=c++17','--offload-arch=gfx950',str(W/'graph_boundary_to_single.cpp'),'-o',str(bins/'transition')],check=True)
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['/opt/rocm/bin/hipcc', '-O2', '-std=c++17', '--offload-arch=gfx950', '/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/graph_boundary_to_single.cpp', '-o', '/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/transition-j55775/bins/transition']' returned non-zero exit status 1.
+srun: error: marlowe-mi355x-2: task 0: Exited with exit code 1

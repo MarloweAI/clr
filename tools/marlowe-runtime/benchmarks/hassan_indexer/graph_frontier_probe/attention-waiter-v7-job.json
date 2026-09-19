@@ -1,0 +1,19 @@
+{
+  "host": "marlowe-login1",
+  "submission_attempted": true,
+  "script": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/attention_waiter_submit_v7.sh",
+  "remote_workdir": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919",
+  "validate": "cd /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919 && python3 attention-waiter-v7/run.py --audit --out attention-waiter-j{job_id}",
+  "log": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/slurm-{job_id}.log",
+  "job_id": 55712,
+  "last_event": {
+    "event": "COMPLETE",
+    "utc": "2026-09-19T06:47:20Z",
+    "job_id": 55712,
+    "validation": "passed"
+  },
+  "slurm_state": "COMPLETED",
+  "slurm_exit": "0:0",
+  "validation_output": "{\"passed\": true, \"job\": \"55712\", \"qualified\": false, \"processes\": 32, \"timing_rows\": 7296, \"manifest_sha256\": \"4ed2a020685260f1c13f790ba914345effeeb8785246e1280b59c18edd846841\"}\n",
+  "validation_passed": true
+}

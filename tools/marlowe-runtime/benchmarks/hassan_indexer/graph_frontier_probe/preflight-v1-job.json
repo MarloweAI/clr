@@ -1,0 +1,19 @@
+{
+  "host": "marlowe-login1",
+  "submission_attempted": true,
+  "script": "preflight_submit_v1.sh",
+  "remote_workdir": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919",
+  "validate": "cd /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919 && python3 preflight.py --audit --out preflight-j{job_id}",
+  "log": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/preflight-slurm-{job_id}.log",
+  "job_id": 55504,
+  "last_event": {
+    "event": "COMPLETE",
+    "utc": "2026-09-19T05:43:50Z",
+    "job_id": 55504,
+    "validation": "passed"
+  },
+  "slurm_state": "COMPLETED",
+  "slurm_exit": "0:0",
+  "validation_output": "{\"passed\": true, \"job\": \"55504\", \"processes\": 9, \"traces\": [{\"launches\": 0, \"chained\": 0, \"peak\": 0}, {\"launches\": 0, \"chained\": 0, \"peak\": 0}, {\"launches\": 0, \"chained\": 0, \"peak\": 0}, {\"launches\": 4, \"chained\": 0, \"peak\": 1}, {\"launches\": 1, \"chained\": 0, \"peak\": 1}, {\"launches\": 64, \"chained\": 62, \"peak\": 64}, {\"launches\": 1139, \"chained\": 1129, \"peak\": 1001}, {\"launches\": 1139, \"chained\": 1009, \"peak\": 82}, {\"launches\": 64, \"chained\": 56, \"peak\": 64}]}\n",
+  "validation_passed": true
+}

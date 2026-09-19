@@ -1,0 +1,21 @@
+{
+  "run.py": "f0c9ff0a7e2a89bc61a942fdc3a076decb7a593b590ed9ab7ec869ccbbcde6fe",
+  "build.py": "d37f86b71370719f621523b712744c4cf5536157c91c822f98a5b027c680fd35",
+  "benchmark.py": "2de721801f11cce0ca8d5c466e09f34eba8400956cbd9b612330a7c7565a3471",
+  "replay.cpp": "07e34a9ba6e60a57847181422202602b375bb0d08653932b6d4474a02ee70bd3",
+  "extract.cpp": "4144f7cbb6942bf7d320d1cd156f53c621717593b34a99f0b9ed1936e89a4a28",
+  "protocol.json": "4f1ba0ca5d64bbbcfed5cde6a78c7b66b50cdacea589cd40d423bacafcd26e3e",
+  "projection-dispatch.json": "e823cde9eec5c8b5fa59baa44c1cf7bcefc84ee8ff382780a73b0d5b899156da",
+  "indexer_projection_schedule.py": "c9401b232180bd6e992b9de3b66bb53ca1e4351ac677d89feb3e6655666cb68b",
+  "submit.sh": "f4149c469d64b397e5718c51eb017b884a77c4227c5a06d4bebaf532dfc83560",
+  "signal-locality.patch": "89e7a4554560e5d151328630c8e8641be0c67cef6a3445773137b9101c6686b4",
+  "rocr-source-manifest.json": "b0258dbc5c2480b1afd335695981513cdc04c849bc46b4039e033b158deb5330",
+  "upstream-source.json": "cfc3cc98ca21ab3b3ca0db384cc69d1b3cd9cc3ef44840650d4ad5190c84b65e",
+  "runtime-build.json": "96cdc70142185954bef99789e88f28cd7ba8d27dae60b1de99a9753517f902ec",
+  "build_runtime.py": "fe804c8319125e8ea8ddaae3d4ba40304417985d1b3a5b923e055f2a751e9734",
+  "build_submit.sh": "f9e9bc3f0d6bedaf5c43cc1f81fa180304d5e398bba009d724c10026fce67e3a",
+  "tool-cmake/ClangConfig.cmake": "f2d70592ec58a5c38f633012181961cebedaf1e5715657c96f8c04bd3f2eff33",
+  "tool-cmake/FindClang.cmake": "f2d70592ec58a5c38f633012181961cebedaf1e5715657c96f8c04bd3f2eff33",
+  "tool-cmake/FindLLVM.cmake": "400e93589d5479b97e1e8f124e4c377dc0f314221881e87e3207b707a3140833",
+  "tool-cmake/LLVMConfig.cmake": "400e93589d5479b97e1e8f124e4c377dc0f314221881e87e3207b707a3140833"
+}

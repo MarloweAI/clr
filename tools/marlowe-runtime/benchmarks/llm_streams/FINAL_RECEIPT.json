@@ -1,0 +1,22 @@
+{
+  "runtime_commit": "f76a622aa56976f3ec9f238373cce28a17a83ed4",
+  "build_base": "77c75b8fa248f0dfc228df9a386289f868a247c2",
+  "patch_sha256": "a414a4b340c9c95d1e0d4d003c06ad350bc2e24393a681996bdcbb8a927582d7",
+  "hip_sha256": "496f497674390218403c946026713663c33c46b6c3cef5eb66e8d5e7d3cb2c9c",
+  "benchmark_source_sha256": {
+    "main.cpp": "4b61f6c3083f39710dc34b5d794b24d81ac7f250b3d31d0ad5df56ea62d4a32c",
+    "mixed.hpp": "fcac74e3663b5c5dbaf7992e41b9876439129e29d50ed7d9add612cc0ed42814",
+    "experts.hpp": "06fea8cb2ab6b4855536328aa131ff1ad2ea3f9e74c8ca34ccca2e99f3f43aa5",
+    "kv.hpp": "3d801ae114f56557e8167d2beac5334505104d7710161e1a1c48cfe50476853d",
+    "common.hpp": "f5f322c771d2ee8662135a4e5a0f3a4ee0a2fdc88db3312dea1954fd32eddc90",
+    "run.py": "538666592e1062727df65c7680e9bec1f8388a7b5a8fc0da367dfe6284079b66",
+    "pipeline.hpp": "4811ac15cfae0ed22f4878e4fc3f55fcce28b582b23d67cc94d781c30fce6c9a",
+    "attention_fetch.hpp": "965acae9c325a2a814b03f21c838ea641c0386bec1055c395ec1c3d9e1a81527"
+  },
+  "benchmark_binary": {
+    "path": "/workspace/home/sasha/amd-runtime-production/iterations/llm-streams-round1-20260917/llm_streams_final",
+    "sha256": "4a906babd102b5600b241e7362c2ac02c198a559dc42250046b7e397006f3c7b"
+  },
+  "full_model_run": false,
+  "allocation_released": 48445
+}

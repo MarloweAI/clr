@@ -1,0 +1,12 @@
+{
+  "extract.cpp": "4144f7cbb6942bf7d320d1cd156f53c621717593b34a99f0b9ed1936e89a4a28",
+  "replay.cpp": "0dc54da04f8e026b3a2165f3b61484cb94a17e767fc7953f8084d80bfe9aa073",
+  "benchmark.py": "91ff7c4f8739851506a11e1a537316b5948a872ca759fbec284c6cb3549e1209",
+  "build.py": "09382330347cfce04ee494972027f406ffdca62fb6b10ee2824e53f22e5aa326",
+  "run.py": "d7a3a59720aedf9e9cdd21205ec9a67ed4f809b359899ac39ef16f9d82251f2a",
+  "protocol.json": "6b0f69b218acee626a8a811b864f984ff86f0a060057925bc35035265341b8ae",
+  "indexer_projection_schedule.py": "c9401b232180bd6e992b9de3b66bb53ca1e4351ac677d89feb3e6655666cb68b",
+  "projection-dispatch.json": "e823cde9eec5c8b5fa59baa44c1cf7bcefc84ee8ff382780a73b0d5b899156da",
+  "submit.sh": "401f76eef79c33dc43a5ff297706219b6e2b8786e1547c1a3b7ca1b3dc5dd5b0",
+  "PLAN.md": "df07aab09fc3bd7196496c026d2fe02b6fcda6f8ed86745b52d60dd522f0da31"
+}

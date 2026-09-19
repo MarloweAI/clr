@@ -1,0 +1,13 @@
+# Function replacement and executable lifetime — job55567
+
+Corrected ownership harnessv3 passed its six-cell audit against runtimev2. All three modes (stock, v2 off, v2 on) passed function-changing graph updates with modules kept until synchronization. Each graph first launches two delayed kernels from moduleA, changes both functions to moduleB and launches into separate output slots. The graph and executable are destroyed before stream synchronization. All four outputs are checked against distinct expected values.
+
+A separate early-module-unload stress case passed with frontier on and failed with stock and frontier off (illegal memory access). This is evidence that exact captured-kernel/program leases protect the new path, not a claim that early module unload is a documented legal HIP application pattern. In-flight unload support was not found in the API contract. The on-path update took0.08493ms while prior GPU work remained delayed200ms, so the result did not come from synchronizing updates. On-path receipts show two launches, one chain and two live generations.
+
+The fixture preserves the two distinct functions/argument arrays and output slots while the first launch remains in flight. Owners are captured from the exact NDRangeKernelCommand during packet capture; launch generations retain those shared owners across function replacement until final successful retirement. `amd::Kernel` owns the program. Failed retirements quarantine these leases. v3/v4 also reject the fast path if any captured kernel lacks an owner.
+
+Earlier failed jobs are retained:55546 failed its old off-path early-unload stress before trying on;55556 exposed a fixture bug (unconditional unload followed by a second unload despite the late-unload switch). Neither is treated as a candidate regression or successful qualification. See `OWNERSHIP_HARNESS_ERRATA.md`. The corrected source is `graph_frontier_ownership_v3.cpp`, runner `ownership_v3.py`, raw `ownership-checks-j55567`.
+
+Runtimev2 HIP `d550f99982d8ae2fc74f7ff8005ca09e9b50040d5fd301151579274de573d7aa`, HSA `2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12`. Remote and downloaded local audits pass. All9 existing lifecycle processes also passed onv2/job55546 andv4/job55564. These correctness results do not transfer v1 timing qualification to later bytes; v4 performance and its own ownership check are job55581.
+
+A hard live-generation resource cap and prompt idle destruction remain open. The watermark is not a total memory bound. `CAPACITY_REVIEW.md` covers the required callback/ownership/lock-order design; no hard cap is implemented in v4.

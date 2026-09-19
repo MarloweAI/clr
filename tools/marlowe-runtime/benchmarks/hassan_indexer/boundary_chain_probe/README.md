@@ -1,0 +1,1 @@
+Frozen job55418 diagnostic. Build requires sibling graph-local v3 headers/compile commands and exact69f3df4 HIP/2899f940 HSA. Paths preserve source provenance rather than supplying a self-contained build. Full raw root is documented in parent BOUNDARY_CHAIN_RESULTS.md. Closed-batch feasibility only; no runtime qualification.

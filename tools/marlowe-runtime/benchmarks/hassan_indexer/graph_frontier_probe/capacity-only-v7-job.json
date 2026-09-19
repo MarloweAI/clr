@@ -1,0 +1,19 @@
+{
+  "host": "marlowe-login1",
+  "submission_attempted": true,
+  "script": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/capacity_only_submit_v7.sh",
+  "remote_workdir": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919",
+  "validate": "cd /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919 && python3 capacity_v3.py --audit --out capacity-j{job_id}",
+  "log": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/preflight-slurm-{job_id}.log",
+  "job_id": 55677,
+  "last_event": {
+    "event": "COMPLETE",
+    "utc": "2026-09-19T06:36:31Z",
+    "job_id": 55677,
+    "validation": "passed"
+  },
+  "slurm_state": "COMPLETED",
+  "slurm_exit": "0:0",
+  "validation_output": "{\"passed\": true, \"job\": \"55677\", \"revision\": \"v7\", \"runs\": [{\"name\": \"burst-cap2\", \"trace\": {\"launches\": 2, \"chained\": 0, \"peak\": 2}, \"capacity_fallbacks\": 62, \"destroy_notifications\": [2], \"result\": {\"passed\": true, \"launches\": 64, \"updates\": 448, \"checked_values\": 448, \"destroyed_before_sync\": true}}, {\"name\": \"burst-cap8\", \"trace\": {\"launches\": 8, \"chained\": 6, \"peak\": 8}, \"capacity_fallbacks\": 56, \"destroy_notifications\": [2], \"result\": {\"passed\": true, \"launches\": 64, \"updates\": 448, \"checked_values\": 448, \"destroyed_before_sync\": true}}, {\"name\": \"burst-cap32\", \"trace\": {\"launches\": 32, \"chained\": 30, \"peak\": 32}, \"capacity_fallbacks\": 32, \"destroy_notifications\": [2], \"result\": {\"passed\": true, \"launches\": 64, \"updates\": 448, \"checked_values\": 448, \"destroyed_before_sync\": true}}, {\"name\": \"boundary-cap8\", \"trace\": {\"launches\": 180, \"chained\": 128, \"peak\": 8}, \"capacity_fallbacks\": 959, \"destroy_notifications\": [1], \"result\": {\"passed\": true, \"checked_values\": 2210, \"chain_launches\": 1104, \"callback_count\": 1, \"queries\": 332}}, {\"name\": \"boundary-cap1024\", \"trace\": {\"launches\": 1139, \"chained\": 1131, \"peak\": 1001}, \"capacity_fallbacks\": 0, \"destroy_notifications\": [1], \"result\": {\"passed\": true, \"checked_values\": 2210, \"chain_launches\": 1104, \"callback_count\": 1, \"queries\": 7}}, {\"name\": \"idle-cap8\", \"trace\": {\"launches\": 1, \"chained\": 0, \"peak\": 1}, \"capacity_fallbacks\": 0, \"destroy_notifications\": [1], \"result\": {\"passed\": true, \"checked_values\": 2, \"destroy_ms\": 0.01583}}, {\"name\": \"hostfed-cap2\", \"trace\": {\"launches\": 2, \"chained\": 1, \"peak\": 2}, \"capacity_fallbacks\": 6, \"destroy_notifications\": [0], \"result\": {\"passed\": true, \"checked_values\": 16, \"launches\": 8, \"submit_ms\": 0.3118, \"watchdog_rescued\": false}}]}\n",
+  "validation_passed": true
+}

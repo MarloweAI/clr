@@ -1,0 +1,5 @@
+# Independent source review
+
+Reviewer countdown_contract_review (xhigh Codex) reviewed architecture and actual replay.cpp/run.py/benchmark.py before freeze. PASS for the bounded uninterrupted batch, with no implementation blocker. Verified same-object modes0/2 and1/3; unique E0 and prior-final-to-next-entry bijection; q0 exact401 versus600/404 counts and q1 400; exact final dependencies/scopes; all private zeros/guards; unused F remain1 and last F0; last host wait and both queue drainage; unchanged 4rounds/8trials schedule; profile list uniqueness; and112B metric ABI including assertion-backed host completion count.
+
+Root applied the requested completion-comment clarification and added DESIGN.md with closed-batch limits, per-launch token/owner-lease requirement and forced materialization boundaries. This review does not approve a HIP port or infer per-launch externally observable retirement from the batch probe. No jobs were delegated. Frozen source identities are source.json; final edit after the substantive review changes only a comment.

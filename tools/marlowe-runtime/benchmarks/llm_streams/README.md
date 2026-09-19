@@ -1,0 +1,105 @@
+# LLM stream microbenchmarks
+
+See [the first-round results](RESULTS.md) for measured runtimes, the graph queue fix and package status.
+
+One GPU, real arithmetic and data movement, eager HIP launches and captured graphs. This suite runs no model. It compares the same executable with stock ROCm 7.2.4, PR1 v8 disabled/enabled, the prior experimental c82cf08 package, and optionally a revised runtime.
+
+## Workloads
+
+| Case | Work and shapes | Schedules |
+|---|---|---|
+| `attention_fetch` | Resident attention plus scattered pinned-host KV restore, partial attention and stable softmax merge. 2,048 attended tokens; 32/128 heads; 32/128/256 misses. BF16 1,152-byte records; secondary 584-byte quantized records. | Serial versus two streams; 16-block, 1,024-thread gather versus one asynchronous copy per record. |
+| `pipeline` | Eight/32 dependent layers with query feedback, two reusable restore buffers, known next-layer miss plan, 32/128 misses, and 1,152/4,608-byte D2H backups. | Serial, shared H2D/D2H stream, separate H2D and D2H streams. |
+| `experts` | Four actual BF16 rocBLAS MLPs, 4,096-wide matrices, SiLU, top-2 routing and weighted merge; batches 16/64, balanced/skewed. | One/two/four streams; strided-batched GEMM control for balanced routing. |
+| `mixed` | One 512-token matrix MLP plus an independent uniform-weight attention V reduction across eight requests with 65,536 tokens each; 604 MB KV allocation per scan. | Serial versus concurrent; two independent KV scans as a shared-resource control. |
+
+The attention kernel implements QK, online softmax and weighted V, but is not a tuned FlashAttention replacement. Its grid is intentionally small because these decode shapes supply few independent heads. The MLP uses structured rank-one weights to enable an independent CPU reference, but executes full dense GEMMs. The bandwidth case omits QK and uses uniform weights explicitly; do not describe it as full attention. Byte counts for the scan count useful V data, excluding padding and intermediate traffic.
+
+Sparse restore uses a GPU kernel reading mapped pinned host memory, like the retained HiSparse path. It consumes compute resources and is not equivalent to DMA. The per-record memcpy control has CPU-known addresses; it does not simulate GPU planning or a device-to-host planning round trip. All memory allocation, pinning, initialization, reference generation, graph instantiation and warmup are outside measured intervals.
+
+## Run
+
+Inside the authorized one-GPU allocation and ROCm 7.2.4 image:
+
+```sh
+/opt/rocm/bin/hipcc -O3 -std=c++17 --offload-arch=gfx950 main.cpp \
+  -I/opt/rocm/include -L/opt/rocm/lib -lrocblas -ldl -o llm_streams
+python3 run.py --binary ./llm_streams \
+  --candidate-lib /path/to/exact-v8/lib \
+  --experimental-lib /path/to/c82cf08/lib \
+  --output /path/to/new-results --rounds 3 --trials 12
+python3 analyze.py /path/to/new-results
+```
+
+An optional `--revised-lib` adds a fifth runtime, retaining exact v8 as a contemporaneous control. All library directories must contain HIP and HSA. The runner verifies actual mapped hashes and experimental API controls, retains failed attempts, requires an unused output directory and rotates runtime order across fresh processes. It does not change CPU affinity. The four explicit streams use the common `GPU_MAX_HW_QUEUES=4` setting. Record any queue-cap ablation separately.
+
+## Correctness and timing
+
+Full schedules alternate within each trial and check outputs against independent CPU arithmetic. Buffers and output are poisoned before replay; the pipeline checks query feedback and every layer's host backup. Reference files are generated once from deterministic inputs, then shared by every runtime. Keep them with their hashes; do not reuse references from a changed producer.
+
+Primary timing is a GPU event interval including the complete join. Host submission and completion times are retained separately. Each row reports median of fresh-process medians; raw trials are never trimmed. Isolated stages use the same kernels and addresses, but their cache/clock state may differ from combined execution. Concurrent stage timing requires a separate profiler pass; profiling results must not replace unprofiled timing.
+
+`expected_us` is an optimistic no-interference estimate from stock isolated stages and the actual dependency DAG. It is neither a calibrated runtime prediction nor a universal lower bound. For attention it is `max(resident, copy + missed_attention) + merge`; for experts, the longest assigned expert chain plus merge; for mixed work, the longer branch. The pipeline model includes two-buffer reuse and shared-copy-stream ordering. Batched GEMM changes kernel geometry and therefore has no estimate derived from the independent-expert DAG.
+
+Bandwidth and compute contention can prevent ideal overlap. Two KV scans are a contention control, not proof that one scan saturates peak HBM. MI355X has 256 CUs, 256 MB last-level cache and 8 TB/s peak HBM bandwidth ([AMD datasheet](https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/product-briefs/amd-instinct-mi355x-gpu-brochure.pdf)); compare measured useful bandwidth with the hardware limit without treating peak as achieved.
+
+The previous experimental runtime also changes graph scheduling, marker policy, spare queue selection and native-wait policy. Differences against it are whole-package comparisons. V8 on/off isolates native-wait enablement. A matching microbenchmark can identify a mechanism worth testing, but cannot establish the cause or size of the reported full-model regression.
+
+## Grouped prefetch diagnostic
+
+Select `--cases grouped_prefetch` to run the additional C1 dependency-pattern
+probe without rerunning the original four cases. It compares prefetch off/on
+with the same arithmetic, mapped-host KV bytes, and separate D2H backup stream.
+Every four-layer group generates a shared index plan on the GPU, copies the
+anchor on the compute stream, then forks three follower copies onto the prefetch
+stream. Each follower waits on its own event before attention consumes its KV.
+The next anchor reuses the plan only after all followers have joined. This
+matches the retained coordinator's ordering; deterministic integer planning
+models the dependency, not the cost of its real top-k/LRU kernels. Layer KV
+buffers remain distinct, as in the application.
+
+Shapes cover 8/32/64 layers, 32 heads, and 32/128 missing 1,152-byte
+records. `LLM_GROUP_DEPTH=1` or `8` controls replays between timing events, with
+no intermediate synchronization. Query feedback persists across replays and the
+CPU reference includes all of them; final host backups check the last replay.
+Timing columns report per-replay GPU, host completion, and submission time.
+Allocation/reset/capture remain outside timing. The runner records these controls
+in every process receipt. The 64-layer graph has more than 256 kernels overall;
+this does **not** establish that any single independent dispatch segment reaches
+the runtime admission threshold.
+
+Optional causal controls: `LLM_GROUP_PLAN_US=0..500` inserts a wall-clock delay
+before anchor planning, explicitly an artificial critical-path delay rather than
+representative planning arithmetic. `LLM_GROUP_MAIN_BACKUP=1` keeps identical
+backup bytes on the main stream to separate backup/prefetch interactions.
+The initial staged runner measures depths 1/8 with default zero delay and side
+backup. These controls are diagnostic variants, not application changes.
+
+The probe does not reproduce the model's complete kernel mix, collectives, or
+planning cost. It cannot by itself establish the cause of the full-model
+regression. The completed depth-1/depth-8 matrices did not reproduce that
+regression; see [the grouped investigation results](GROUPED_RESULTS.md).
+
+`LLM_GROUP_HEADS=32|256|512` optionally widens the attention grid (default 32).
+The recorded MI355X device has 256 CUs; 32 one-head blocks cannot exercise
+full-device compute contention. Wider grids test that sensitivity with the same
+per-head attention arithmetic and CPU reference. This changes query count and
+D2H backup bytes (one 1152-byte record per 32 heads), so compare runtimes within
+each shape, not absolute times across shapes. It is a contention control, not
+a claim to reproduce C1 batch size or its kernel occupancy. Actual occupancy
+still depends on register and shared-memory use; block count alone is not a
+measurement of utilization. The 256-head shape was measured in job 49717 (see GROUPED_RESULTS.md); the
+512-head shape remains untested.
+
+`LLM_GROUP_SPLITS=1|22|38` controls submission granularity (default 1).
+Job 49816 tested 1 and 22; 38 remains untested. It partitions the same 512 resident tokens into disjoint
+ranges, launches one attention kernel per range on the main stream, then
+merges their softmax summaries with restored KV in one kernel. Including the
+restored attention, final merge and KV pack gives 4, 25 or 41 compute kernels
+per layer, before group planning/copies. KV input bytes, query count, output
+meaning, transfer schedule and independent CPU reference stay fixed. Extra
+partial-summary traffic/reductions and launch overhead are real added costs;
+this does not hold instruction count constant or reproduce the model's mix
+of GEMMs and other operators. Compare runtimes within each split setting.
+The measured split case uses 22 resident partitions, giving 25 compute kernels
+per layer. See GROUPED_RESULTS.md for its ordering/admission interaction.

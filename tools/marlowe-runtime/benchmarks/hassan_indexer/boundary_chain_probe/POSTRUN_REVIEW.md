@@ -1,0 +1,11 @@
+# Independent post-run audit: 55418
+
+Reviewer: countdown_contract_review (xhigh Codex), read-only review. No jobs delegated. PASS after independently rehashing all frozen source/build/run artifacts and both raw logs; recomputing576 timing keys,4590 numerical rows and128 raw/unique profile keys per graph size; and running the frozen audit. Source3bd4fd993677ab63be36a8e9d8ea0e0cc84337852c5aa4dc2d5d737471dd403b and rawf357ab57d703544c4f5b47d87a9163762031996414c60d84f528d3702f375ba0 match.
+
+Reproduced g1 host20.334929→17.240805 andlocal14.993754→11.732014; groupedlocal7.281854→7.230813. g1local paired deltas are-3.2577,-3.2510,-3.2753,-3.2677us/pair (-21.68..-21.85%); g50local deltas-.0466..-.0566us (-.64..-.78%). Preparation remains matched; almost all g1 gain is post-publication latency. The roughly.003us/pair publication improvement is minor.
+
+Independent header decode found only barrierNN259, laterkernelAA2818, firstkernelSA3330 andfinalbarrierAS4867. g1main changes600→401 packets:200 eachNN/SA/AS become1NN+200SA+200AS; side400 unchanged. g50main404→401,side400 unchanged. Exact byte audit proves completion rewiring/bijection, same token CSVs, original kernel templates and final dependency. Profile dependency intervals are nonnegative (min3.12us g1,2.04us g50), supporting only the stated dispatch-interval interpretation.
+
+Qualification remains closed uninterrupted batch, not HIP/stock/serial/production success. The reviewer required source-specific integration corrections: combined F attribution; replace g1-rejecting eligibility; preserve public predecessor when replacing GPU reset; use a per-current-launch frontier token rather than future storage; acquire-only kernel scope instead of addSystemScope's tail upgrade; and pre-submit exact-frontier bridging rather than relying on eventual batch flush. Root added all six to NEXT_HIP_INTEGRATION.md / GRAPH_FRONTIER_DESIGN.md before implementation.
+
+Further required gates: all-leaf and physical-alias joins; precise events/queries/callbacks/ordinary/copy/legacy-stream boundaries; immutable update snapshots and GraphExec/module/arena leases through destroy; failure quarantine; successor reader leases; capacity and idle/destruction drainage. No additional packet experiment is warranted before designing this integration.

@@ -1,0 +1,58 @@
+{
+  "revision": "v2",
+  "source_manifest_sha256": "e64cbef65e71d1d505e9f97f17c97d5981173960c2a4610f35d9ac6fa249e2cf",
+  "full_patch_sha256": "6708beb5858f147260a328847fea3254a6accf61a29542fc6167949561882e3b",
+  "candidate_patch_sha256": "337e759d8ab5ba79666e7fabad56bf6a45838cf374269f49ac0d680d50f29cb9",
+  "commands": [
+    [
+      "git",
+      "clone",
+      "--shared",
+      "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/release-clr",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v2"
+    ],
+    [
+      "git",
+      "-C",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v2",
+      "checkout",
+      "--detach",
+      "cab5670a350678f2b0a6feb388fcbbca56c426a1"
+    ],
+    [
+      "git",
+      "-C",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v2",
+      "apply",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/full-v2.patch"
+    ],
+    [
+      "cmake",
+      "-S",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v2",
+      "-B",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-v2",
+      "-DCLR_BUILD_HIP=ON",
+      "-DCLR_BUILD_OCL=OFF",
+      "-DHIP_PLATFORM=amd",
+      "-D__HIP_ENABLE_PCH=OFF",
+      "-DHIP_COMMON_DIR=/workspace/home/sasha/amd-runtime-production/iterations/native-wait-neutral-20260917/release8-build/hip",
+      "-DCMAKE_PREFIX_PATH=/opt/rocm",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "-DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang",
+      "-DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++"
+    ],
+    [
+      "cmake",
+      "--build",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-v2",
+      "-j8"
+    ]
+  ],
+  "libraries": {
+    "libamdhip64.so": "d550f99982d8ae2fc74f7ff8005ca09e9b50040d5fd301151579274de573d7aa",
+    "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+  },
+  "compiler": "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: /opt/rocm-7.2.4/lib/llvm/bin\nConfiguration file: /opt/rocm-7.2.4/lib/llvm/bin/clang++.cfg\n"
+}

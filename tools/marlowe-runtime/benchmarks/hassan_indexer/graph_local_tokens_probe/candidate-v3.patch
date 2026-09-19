@@ -1,0 +1,725 @@
+diff --git a/hipamd/src/hip_graph_internal.cpp b/hipamd/src/hip_graph_internal.cpp
+index 1380fac..c331795 100644
+--- a/hipamd/src/hip_graph_internal.cpp
++++ b/hipamd/src/hip_graph_internal.cpp
+@@ -1273,6 +1273,8 @@ hipError_t GraphExec::CaptureAQLPackets() {
+ 
+ // ================================================================================================
+ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     return hipSuccess;
+   }
+@@ -1375,6 +1377,8 @@ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
+ // ================================================================================================
+ hipError_t GraphExec::UpdatePacketBatchesForNodeEnableDisable(hip::GraphNode* node,
+                                                               bool isEnabled) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     // Only handle single stream case with captured nodes
+     return hipSuccess;
+@@ -2322,10 +2326,221 @@ bool Graph::RunNodes(int32_t base_stream, const std::vector<hip::Stream*>* paral
+   return true;
+ }
+ 
++bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
++                                  std::unordered_map<int, hip::Stream*>& assignment) {
++  if (!GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || !amd::IS_HIP || !AMD_DIRECT_DISPATCH ||
++      DEBUG_HIP_FORCE_ASYNC_QUEUE || !use_segment_scheduling_ || streams_coalesced_ ||
++      max_streams_dev_.size() != 1 || instantiateDeviceId_ != launch_stream->DeviceId() ||
++      entry_fused_device_id_ != launch_stream->DeviceId() || streams_.size() < 2 ||
++      segments_.empty() || HasHiddenHeap() || amd::Agent::shouldPostEventEvents() ||
++      amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) ||
++      amd::activity_prof::IsEnabled(::OP_ID_COPY) ||
++      amd::activity_prof::IsEnabled(::OP_ID_BARRIER)) return false;
++  std::unordered_set<uint64_t> physical;
++  for (auto* stream : streams_) {
++    if (stream->DeviceId() != launch_stream->DeviceId() ||
++        stream->properties().test(CL_QUEUE_PROFILING_ENABLE)) return false;
++    physical.insert(stream->getQueueID());
++  }
++  if (physical.size() < 2) return false;
++  for (const auto& segment : segments_) {
++    if (segment.child_graph_ptr != nullptr || segment.nodes.empty() || segment.id < 0 ||
++        static_cast<size_t>(segment.id) >= segments_.size()) return false;
++    for (auto* node : segment.nodes) {
++      if (node->GetType() != hipGraphNodeTypeKernel || !node->GraphCaptureEnabled() ||
++          node->GetDeviceId() != launch_stream->DeviceId()) return false;
++    }
++    auto it = segmentBatches_.find(segment.id);
++    if (it == segmentBatches_.end() || it->second.packet_batches.size() != 1 ||
++        it->second.node_capture_status.size() != segment.nodes.size() ||
++        !std::all_of(it->second.node_capture_status.begin(), it->second.node_capture_status.end(),
++                     [](bool captured) { return captured; })) return false;
++    const auto& batch = it->second.packet_batches.front();
++    if (batch.disabledNodeCount != 0 || batch.nodeRanges.size() != segment.nodes.size() ||
++        batch.dispatchPackets.size() != batch.dispatchKernelNames.size() ||
++        !launch_stream->vdev()->graphSignalPacketsEligible(batch.dispatchPackets)) return false;
++  }
++  for (int level = 0; level <= max_dependency_level_; ++level) {
++    auto it = segments_per_level_.find(level);
++    if (it == segments_per_level_.end()) continue;
++    const auto* order = &it->second;
++    if (assignment_device_id_ == launch_stream->DeviceId()) {
++      auto placed = assignment_segments_per_level_.find(level);
++      if (placed != assignment_segments_per_level_.end()) order = &placed->second;
++    }
++    AssignStreamsToSegments(*order, launch_stream, streams_, assignment);
++  }
++  if (assignment.size() != segments_.size()) return false;
++  for (const auto& segment : segments_) {
++    if (assignment.count(segment.id) == 0) return false;
++    for (int predecessor : segment.segment_ids_dependencies) {
++      if (assignment.count(predecessor) == 0) return false;
++    }
++  }
++  // No internal cross-queue dependency means no GPU token consumer. Keep the
++  // established path; creating/resetting tokens would perform no useful work.
++  for (const auto& segment : segments_) {
++    for (int predecessor : segment.segment_ids_dependencies) {
++      if (assignment.at(predecessor)->getQueueID() != assignment.at(segment.id)->getQueueID()) {
++        return true;
++      }
++    }
++  }
++  return false;
++}
++
++GraphExec::GraphSignalGeneration* GraphExec::AcquireGraphSignalGeneration(hip::Stream* stream) {
++  {
++    std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++    for (auto& generation : graph_signal_generations_) {
++      if (!generation->busy && !generation->quarantined &&
++          generation->arena->handles.size() == segments_.size()) {
++        generation->busy = true;
++        return generation.get();
++      }
++    }
++  }
++  // Creation can call the driver; never block completion callbacks on it.
++  auto generation = std::make_unique<GraphSignalGeneration>();
++  generation->arena = stream->vdev()->createGraphSignalArena(
++      segments_.size(), !GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST);
++  if (!generation->arena) return nullptr;
++  generation->busy = true;
++  auto* result = generation.get();
++  {
++    std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++    graph_signal_generations_.push_back(std::move(generation));
++  }
++  return result;
++}
++
++void GraphExec::ReleaseGraphSignalLaunch(cl_event event, cl_int status, void* data) {
++  auto* context = static_cast<GraphSignalLaunch*>(data);
++  auto* graph = context->graph;
++  const bool completed = status == CL_COMPLETE;
++  {
++    std::lock_guard<std::mutex> lock(graph->graph_signal_pool_mutex_);
++    context->generation->quarantined = !completed;
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      // Untimed audit receipt must precede any reuse/BEGIN on another CPU thread.
++      fprintf(stderr, "GRAPH_LOCAL_COMPLETE graph=%p serial=%llu generation=%p status=%d recycled=%u\n",
++              static_cast<void*>(graph), static_cast<unsigned long long>(context->serial),
++              static_cast<void*>(context->generation), status, completed);
++    }
++    if (completed) context->generation->busy = false;
++  }
++  delete context;
++  // A failed asynchronous retirement is not proof of GPU drainage. Preserve the
++  // graph/arena rather than recycle or destroy storage that may still be read.
++  if (completed) graph->release();
++}
++
++hipError_t GraphExec::RunGraphSignals(hip::Stream* launch_stream,
++                                    const std::unordered_map<int, hip::Stream*>& assignment) {
++  hipError_t status = hipSuccess;
++  auto* generation = AcquireGraphSignalGeneration(launch_stream);
++  if (generation == nullptr) return hipErrorOutOfMemory;  // Nothing published.
++  auto* context = new GraphSignalLaunch{this, generation, ++graph_signal_launch_serial_};
++  auto* final = new amd::Marker(*launch_stream, kMarkerDisableFlush, {});
++  final->setCommandEntryScope(amd::Device::kCacheStateIgnore);
++  this->retain();
++  if (!final->event().setCallback(CL_COMPLETE, ReleaseGraphSignalLaunch, context, false)) {
++    {
++      std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++      generation->busy = false;
++    }
++    delete context;
++    final->release();
++    this->release();
++    return hipErrorInvalidHandle;
++  }
++
++  // Construct ordinary per-logical-stream retirement before publication.
++  // These commands never export the local dependency tokens as HwEvents.
++  std::unordered_map<hip::Stream*, amd::AccumulateCommand*> lanes;
++  for (auto& pair : assignment) {
++    if (lanes.count(pair.second) == 0) {
++      lanes.emplace(pair.second, new amd::AccumulateCommand(*pair.second, {}, nullptr));
++    }
++  }
++  auto* reset = new amd::AccumulateCommand(*launch_stream, {}, nullptr);
++  const uint64_t serial = context->serial;
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_BEGIN graph=%p serial=%llu generation=%p tokens=%zu lanes=%zu\n",
++            static_cast<void*>(this), static_cast<unsigned long long>(serial),
++            static_cast<void*>(generation), generation->arena->handles.size(), lanes.size());
++  }
++  // From here every exit retires the published prefix through final's callback.
++  bool reset_ok = launch_stream->vdev()->resetGraphSignalArena(*generation->arena, *reset);
++  reset->enqueue();
++  if (!reset_ok || !reset->notifyCmdQueue(false)) status = hipErrorUnknown;
++  if (status == hipSuccess) {
++    auto* event = reset->NotifyEvent() != nullptr ? reset->NotifyEvent() : reset;
++    if (event->HwEvent() == nullptr && reset->status() != CL_COMPLETE) status = hipErrorUnknown;
++  }
++  std::unordered_set<hip::Stream*> touched;
++  size_t submitted = 0;
++  for (int level = 0; level <= max_dependency_level_ && status == hipSuccess; ++level) {
++    auto it = segments_per_level_.find(level);
++    if (it == segments_per_level_.end()) continue;
++    for (int id : it->second) {
++      const auto& segment = segments_[id];
++      auto* stream = assignment.at(id);
++      auto* command = lanes.at(stream);
++      if (touched.insert(stream).second) command->setGraphEntryEvent(reset);
++      std::vector<uint64_t> waits;
++      for (int predecessor : segment.segment_ids_dependencies) {
++        if (assignment.at(predecessor)->getQueueID() != stream->getQueueID()) {
++          waits.push_back(generation->arena->handles.at(predecessor));
++        }
++      }
++      auto& batch = segmentBatches_.at(id).packet_batches.front();
++      bool ok = stream->vdev()->dispatchGraphSignalPacketBatch(batch.dispatchPackets,
++          batch.dispatchKernelNames, command, waits, generation->arena->handles.at(id));
++      ++submitted;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_LOCAL_SEGMENT graph=%p serial=%llu segment=%d logical=%llu physical=%llu waits=%zu status=%u\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial), id,
++                static_cast<unsigned long long>(stream->GetStreamId()),
++                static_cast<unsigned long long>(stream->getQueueID()), waits.size(), ok);
++      }
++      if (!ok || (GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER != 0 &&
++                  submitted == GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER)) {
++        status = hipErrorUnknown;
++        break;
++      }
++    }
++  }
++
++  // Seal every possibly published logical lane, including a failing batch.
++  amd::Command::EventWaitList final_waits;
++  for (auto& lane : lanes) {
++    if (touched.count(lane.first) != 0) {
++      lane.second->enqueue();
++      if (lane.first != launch_stream) final_waits.push_back(lane.second);
++    }
++  }
++  // No covered-tail omission: these ordinary events retire all host batches and
++  // every possible token reader, including partial-publication failures.
++  final->updateEventWaitList(final_waits);
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_RETIRE graph=%p serial=%llu submitted=%zu lanes=%zu side_waits=%zu status=%d\n",
++            static_cast<void*>(this), static_cast<unsigned long long>(serial), submitted,
++            touched.size(), final_waits.size(), static_cast<int>(status));
++  }
++  final->enqueue();  // Callback owns generation+GraphExec until this GPU join completes.
++  final->release();
++  reset->release();
++  for (auto& lane : lanes) lane.second->release();
++  return status;
++}
++
+ hipError_t ihipGraphDebugDotPrint(hip::Graph* graph, const char* path, unsigned int flags);
+ 
+ // ================================================================================================
+ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS) lowering_lock.lock();
+   hipError_t status = hipSuccess;
+   amd::Marker* fused_completion_marker = nullptr;
+ 
+@@ -2378,6 +2593,14 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+       UpdateStreams(launch_stream);
+       lastLaunchStream_ = launch_stream;
+     }
++    std::unordered_map<int, hip::Stream*> local_signal_assignment;
++    if (CanUseGraphSignals(launch_stream, local_signal_assignment)) {
++      return RunGraphSignals(launch_stream, local_signal_assignment);
++    }
++    if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS && GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_LOCAL_FALLBACK graph=%p segments=%zu streams=%zu\n",
++              static_cast<void*>(this), segments_.size(), streams_.size());
++    }
+     const bool fuse_final = GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL &&
+         amd::IS_HIP && AMD_DIRECT_DISPATCH && !DEBUG_HIP_FORCE_ASYNC_QUEUE &&
+         !streams_.empty() && max_streams_dev_.size() == 1 &&
+diff --git a/hipamd/src/hip_graph_internal.hpp b/hipamd/src/hip_graph_internal.hpp
+index b813ff7..0076721 100644
+--- a/hipamd/src/hip_graph_internal.hpp
++++ b/hipamd/src/hip_graph_internal.hpp
+@@ -21,6 +21,8 @@
+ #pragma once
+ #include <algorithm>
+ #include <queue>
++#include <mutex>
++#include <memory>
+ #include <stack>
+ #include <iostream>
+ #include <unordered_map>
+@@ -934,6 +936,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+       }
+     }
+     parallel_streams_.clear();
++    graph_signal_generations_.clear();  // All launch callbacks have released this GraphExec.
+     if (IsSegmentSchedulingEnabled()) {
+       if (kernArgManager_ != nullptr) {
+         kernArgManager_->release();
+@@ -995,6 +998,11 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+   //! Update streams for the graph execution with launch stream from application
+   void UpdateStreams(hip::Stream* launch_stream);
+   bool CanCoalesce(hip::Stream* launch_stream) const;
++  bool CanUseGraphSignals(hip::Stream* launch_stream,
++                          std::unordered_map<int, hip::Stream*>& assignment);
++  hipError_t RunGraphSignals(hip::Stream* launch_stream,
++                            const std::unordered_map<int, hip::Stream*>& assignment);
++  static void ReleaseGraphSignalLaunch(cl_event event, cl_int status, void* data);
+   //! Find the number of streams required per device for multi-device graph execution
+   //! This method analyzes the stream-to-device mappings and recursively processes
+   //! child graphs to determine the maximum concurrent streams needed per device
+@@ -1066,6 +1074,24 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+   //! Batches of accumulated packets and kernel names for batch dispatch optimization
+   //! Map from segment ID to SegmentBatch for O(1) lookup
+   std::unordered_map<int, SegmentBatch> segmentBatches_;
++
++  struct GraphSignalGeneration {
++    std::unique_ptr<amd::device::VirtualDevice::GraphSignalArena> arena;
++    bool busy = false;
++    bool quarantined = false;
++  };
++  struct GraphSignalLaunch {
++    GraphExec* graph;
++    GraphSignalGeneration* generation;
++    uint64_t serial;
++  };
++  // CPU lowering is serialized, never GPU execution. The callback takes only
++  // pool_mutex_, and releases all references after dropping that lock.
++  std::mutex graph_signal_launch_mutex_;
++  std::mutex graph_signal_pool_mutex_;
++  std::vector<std::unique_ptr<GraphSignalGeneration>> graph_signal_generations_;
++  uint64_t graph_signal_launch_serial_ = 0;
++  GraphSignalGeneration* AcquireGraphSignalGeneration(hip::Stream* stream);
+ };
+ 
+ class ChildGraphNode : public GraphNode, public GraphExec {
+diff --git a/rocclr/device/blit.hpp b/rocclr/device/blit.hpp
+index c4d0093..b3c8c0f 100644
+--- a/rocclr/device/blit.hpp
++++ b/rocclr/device/blit.hpp
+@@ -226,6 +226,8 @@ class BlitManager : public amd::HeapObject {
+       device::Memory& memory,  //!< Memory contents to compare the 'value' against
+       uint64_t value, size_t offset, size_t sizeBytes, uint64_t flags, uint64_t mask) const = 0;
+ 
++  virtual bool resetGraphSignals(const uint64_t* handles, uint32_t count) const { return false; }
++
+   //! Stream batch memory operation
+   virtual bool batchMemOps(const void* paramArray, size_t paramSize, uint32_t count) const = 0;
+ 
+diff --git a/rocclr/device/blitcl.cpp b/rocclr/device/blitcl.cpp
+index 19a23a1..935f2c6 100644
+--- a/rocclr/device/blitcl.cpp
++++ b/rocclr/device/blitcl.cpp
+@@ -162,6 +162,18 @@ const char* BlitLinearSourceCode = BLIT_KERNELS(
+       __amd_copyBufferRectAligned(src, dst, srcRect, dstRect, size);
+     }
+ 
++    __kernel void __amd_rocclr_graphSignalReset(__global const ulong* handles, uint count) {
++      uint i = __builtin_amdgcn_workgroup_id_x() * 64 + __builtin_amdgcn_workitem_id_x();
++      if (i < count) {
++        // Private ROCr SharedSignal ABI: value at8, start/end timestamps at32/40.
++        // Ownership fields are never overwritten and no host reader is active.
++        __global volatile ulong* signal = (__global volatile ulong*)handles[i];
++        signal[1] = 1;
++        signal[4] = 0;
++        signal[5] = 0;
++      }
++    }
++
+     __kernel void __amd_rocclr_batchMemOp(__global void* params, uint count) {
+       __amd_batchMemOp(params, count);
+     });
+diff --git a/rocclr/device/device.hpp b/rocclr/device/device.hpp
+index 56deff7..a1d6ce9 100644
+--- a/rocclr/device/device.hpp
++++ b/rocclr/device/device.hpp
+@@ -50,6 +50,7 @@
+ #include <vector>
+ #include <map>
+ #include <mutex>
++#include <memory>
+ #include <list>
+ #include <set>
+ #include <unordered_set>
+@@ -1329,6 +1330,26 @@ class VirtualDevice : public amd::ReferenceCountedObject {
+   virtual bool dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                                       const std::vector<std::string>& kernelNames,
+                                       amd::AccumulateCommand* vcmd = nullptr) = 0 ;
++  // Internal graph dependency storage. It must never become a Command::HwEvent.
++  class GraphSignalArena {
++   public:
++    std::vector<uint64_t> handles;
++    virtual ~GraphSignalArena() = default;
++  };
++  virtual std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) {
++    return nullptr;
++  }
++  virtual bool resetGraphSignalArena(GraphSignalArena& arena, amd::AccumulateCommand& command) {
++    return false;
++  }
++  virtual bool graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const {
++    return false;
++  }
++  virtual bool dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>& dependencies, uint64_t completion) {
++    return false;
++  }
+   //! Returns the number of outstanding HSA async handlers
+   std::atomic<uint64_t>& QueuedAsyncHandlers() const { return queued_async_handlers_; }
+ 
+diff --git a/rocclr/device/rocm/rocblit.cpp b/rocclr/device/rocm/rocblit.cpp
+index a76e78f..6eda4ae 100644
+--- a/rocclr/device/rocm/rocblit.cpp
++++ b/rocclr/device/rocm/rocblit.cpp
+@@ -2579,6 +2579,23 @@ bool KernelBlitManager::streamOpsWait(device::Memory& memory, uint64_t value, si
+ }
+ 
+ // ================================================================================================
++bool KernelBlitManager::resetGraphSignals(const uint64_t* handles, uint32_t count) const {
++  amd::ScopedLock lock(lockXferOps_);
++  if (handles == nullptr || count == 0 || kernels_[GraphSignalReset] == nullptr) return false;
++  size_t offset[1] = {0};
++  size_t global[1] = {(static_cast<size_t>(count) + 63) & ~size_t(63)};
++  size_t local[1] = {64};
++  setArgument(kernels_[GraphSignalReset], 0, sizeof(cl_mem), handles, 0, nullptr, true);
++  setArgument(kernels_[GraphSignalReset], 1, sizeof(count), &count);
++  amd::NDRangeContainer range(1, offset, global, local);
++  address parameters = captureArguments(kernels_[GraphSignalReset]);
++  if (parameters == nullptr) return false;
++  bool result = gpu().submitKernelInternal(range, *kernels_[GraphSignalReset], parameters, nullptr);
++  releaseArguments(parameters);
++  // No synchronous blit fence. The caller appends ordinary GPU retirement.
++  return result;
++}
++
+ bool KernelBlitManager::batchMemOps(const void* paramArray, size_t paramSize,
+                                     uint32_t count) const {
+   amd::ScopedLock k(lockXferOps_);
+diff --git a/rocclr/device/rocm/rocblit.hpp b/rocclr/device/rocm/rocblit.hpp
+index 9b60899..d417025 100644
+--- a/rocclr/device/rocm/rocblit.hpp
++++ b/rocclr/device/rocm/rocblit.hpp
+@@ -284,6 +284,7 @@ class KernelBlitManager : public DmaBlitManager {
+     GwsInit,
+     InitHeap,
+     BatchMemOp,
++    GraphSignalReset,
+     BlitLinearTotal,
+     FillImage = BlitLinearTotal,
+     BlitCopyImage,
+@@ -497,6 +498,8 @@ class KernelBlitManager : public DmaBlitManager {
+       device::Memory& memory,  //!< Memory contents to compare the 'value' against
+       uint64_t value, size_t offset, size_t sizeBytes, uint64_t flags, uint64_t mask) const;
+ 
++  bool resetGraphSignals(const uint64_t* handles, uint32_t count) const override;
++
+   //! Batch memory ops- Submits batch of streamWaits and streamWrite operations.
+   virtual bool batchMemOps(const void* paramArray, size_t paramSize, uint32_t count) const;
+ 
+@@ -585,6 +588,7 @@ static const char* BlitName[KernelBlitManager::BlitTotal] = {
+     "__amd_rocclr_streamOpsWrite",    "__amd_rocclr_streamOpsWait",
+     "__amd_rocclr_scheduler",         "__amd_rocclr_gwsInit",
+     "__amd_rocclr_initHeap",          "__amd_rocclr_batchMemOp",
++    "__amd_rocclr_graphSignalReset",
+     "__amd_rocclr_fillImage",         "__amd_rocclr_copyImage",
+     "__amd_rocclr_copyImage1DA",      "__amd_rocclr_copyImageToBuffer",
+     "__amd_rocclr_copyBufferToImage"};
+diff --git a/rocclr/device/rocm/rocvirtual.cpp b/rocclr/device/rocm/rocvirtual.cpp
+index 7656a7e..20f72a8 100644
+--- a/rocclr/device/rocm/rocvirtual.cpp
++++ b/rocclr/device/rocm/rocvirtual.cpp
+@@ -1399,7 +1399,8 @@ template <typename AqlPacket>
+ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
+                                                bool blocking, bool attach_signal,
+                                                const std::vector<std::string>* kernelNames,
+-                                               bool tail_completion_only) {
++                                               bool tail_completion_only,
++                                               uint64_t graph_completion) {
+   if (packets.empty()) {
+     return false;
+   }
+@@ -1473,11 +1474,16 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+       bool attachSignal = tail_completion_only ? terminal_packet :
+           (timestamp_ != nullptr || attach_signal);
+ 
+-      packet->completion_signal = Barriers().ActiveSignal(
+-          kInitSignalValueOne, attachSignal ? timestamp_ : nullptr, attachSignal);
++      if (graph_completion != 0) {
++        packet->completion_signal = hsa_signal_t{terminal_packet ? graph_completion : 0};
++      } else {
++        packet->completion_signal = Barriers().ActiveSignal(
++            kInitSignalValueOne, attachSignal ? timestamp_ : nullptr, attachSignal);
++      }
+ 
+       if (std::is_same<decltype(packet), hsa_kernel_dispatch_packet_t*>::value &&
+-          timestamp_ != nullptr && (!tail_completion_only || terminal_packet)) {
++          graph_completion == 0 && timestamp_ != nullptr &&
++          (!tail_completion_only || terminal_packet)) {
+         // If profiling is enabled, store the correlation ID in the dispatch packet
+         if (amd::activity_prof::IsEnabled(OP_ID_DISPATCH)) {
+           auto dispatchPacket = reinterpret_cast<hsa_kernel_dispatch_packet_t*>(packet);
+@@ -1539,10 +1545,11 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+         fence_state_ = static_cast<Device::CacheState>(expected_fence_state);
+       }
+ 
+-      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && tail_completion_only) {
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && (tail_completion_only || graph_completion != 0)) {
+         const uint16_t actual_header = isFirstPacket ? doorbellHeader : packet->header;
+-        fprintf(stderr, "GRAPH_KERNEL_RETIRE_PACKET command=%p physical=%llu packet=%zu "
++        fprintf(stderr, "%s command=%p physical=%llu packet=%zu "
+                         "total=%zu signal=%llu barrier=%u acquire=%u release=%u\n",
++                graph_completion != 0 ? "GRAPH_LOCAL_PACKET" : "GRAPH_KERNEL_RETIRE_PACKET",
+                 static_cast<void*>(command_), static_cast<unsigned long long>(gpu_queue_->id),
+                 packetIndex, numPackets,
+                 static_cast<unsigned long long>(packet->completion_signal.handle),
+@@ -1616,7 +1623,13 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+ 
+     processedPackets += batchSize;
+ 
+-    TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
++    if (graph_completion != 0) {
++      // Do not expose a local dependency to IsQueueIdle's CPU signal loads.
++      // The ordinary lane retirement later supplies the host-visible completion.
++      last_write_index_ = startIndex + batchSize - 1;
++    } else {
++      TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
++    }
+     if (tail_completion_only && GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS != 0 &&
+         processedPackets < numPackets &&
+         processedPackets >= GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS) {
+@@ -1650,15 +1663,115 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+ }
+ 
+ // ================================================================================================
++namespace {
++class RocGraphSignalArena final : public device::VirtualDevice::GraphSignalArena {
++ public:
++  const Device& device;
++  uint64_t* table = nullptr;
++  explicit RocGraphSignalArena(const Device& dev) : device(dev) {}
++  ~RocGraphSignalArena() override {
++    for (uint64_t handle : handles) {
++      if (Hsa::signal_destroy(hsa_signal_t{handle}) != HSA_STATUS_SUCCESS) std::abort();
++    }
++    if (table != nullptr) device.hostFree(table, handles.size() * sizeof(uint64_t));
++  }
++};
++}
++
++std::unique_ptr<device::VirtualDevice::GraphSignalArena>
++VirtualGPU::createGraphSignalArena(size_t count, bool local) {
++  if (count == 0 || count > UINT32_MAX) return nullptr;
++  auto arena = std::make_unique<RocGraphSignalArena>(dev());
++  arena->handles.reserve(count);
++  hsa_agent_t agent = dev().getBackendDevice();
++  // Private, verified ROCr implementation from the placement experiment.
++  const uint64_t attributes = HSA_AMD_SIGNAL_AMD_GPU_ONLY | (uint64_t(1) << 63) |
++      (local ? (uint64_t(1) << 62) : 0);
++  for (size_t i = 0; i < count; ++i) {
++    hsa_signal_t signal{};
++    if (Hsa::signal_create(1, 1, &agent, attributes, &signal) != HSA_STATUS_SUCCESS) return nullptr;
++    arena->handles.push_back(signal.handle);
++  }
++  arena->table = static_cast<uint64_t*>(dev().hostAlloc(count * sizeof(uint64_t), 64,
++                                                       Device::MemorySegment::kKernArg));
++  if (arena->table == nullptr) return nullptr;
++  std::memcpy(arena->table, arena->handles.data(), count * sizeof(uint64_t));
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_ARENA arena=%p count=%zu local=%u agent=%llu\n",
++            static_cast<void*>(arena.get()), count, local,
++            static_cast<unsigned long long>(agent.handle));
++  }
++  return arena;
++}
++
++bool VirtualGPU::resetGraphSignalArena(GraphSignalArena& storage,
++                                       amd::AccumulateCommand& command) {
++  auto& arena = static_cast<RocGraphSignalArena&>(storage);
++  amd::ScopedLock lock(execution());
++  profilingBegin(command);
++  const auto saved_header = aqlHeader_;
++  aqlHeader_ = (HSA_PACKET_TYPE_KERNEL_DISPATCH << HSA_PACKET_HEADER_TYPE) |
++      (1 << HSA_PACKET_HEADER_BARRIER) |
++      (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE) |
++      (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE);
++  addSystemScope();
++  bool result = blitMgr().resetGraphSignals(arena.table, static_cast<uint32_t>(arena.handles.size()));
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_RESET command=%p arena=%p physical=%llu count=%zu header=%u status=%u\n",
++            static_cast<void*>(&command), static_cast<void*>(&arena),
++            static_cast<unsigned long long>(gpu_queue_->id), arena.handles.size(), aqlHeader_, result);
++  }
++  aqlHeader_ = saved_header;
++  // Even a pre-dispatch failure must consume any ordinary external dependencies.
++  if (!result) dispatchBlockingWait();
++  profilingEnd();
++  return result;
++}
++
++bool VirtualGPU::graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const {
++  return !packets.empty() && std::all_of(packets.begin(), packets.end(), [](const uint8_t* bytes) {
++    const auto* p = reinterpret_cast<const hsa_kernel_dispatch_packet_t*>(bytes);
++    return extractAqlBits(p->header, HSA_PACKET_HEADER_TYPE, HSA_PACKET_HEADER_WIDTH_TYPE) ==
++        HSA_PACKET_TYPE_KERNEL_DISPATCH &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_BARRIER, HSA_PACKET_HEADER_WIDTH_BARRIER) != 0 &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE,
++                      HSA_PACKET_HEADER_WIDTH_SCACQUIRE_FENCE_SCOPE) >= HSA_FENCE_SCOPE_AGENT &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE,
++                      HSA_PACKET_HEADER_WIDTH_SCRELEASE_FENCE_SCOPE) >= HSA_FENCE_SCOPE_AGENT;
++  });
++}
++
++bool VirtualGPU::dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++    const std::vector<std::string>& names, amd::AccumulateCommand* command,
++    const std::vector<uint64_t>& dependencies, uint64_t completion) {
++  if (completion == 0 || !graphSignalPacketsEligible(packets)) return false;
++  // Never mutate graph-owned captured templates or leave their completion fields
++  // referring to a generation that a later launch might reuse.
++  std::vector<hsa_kernel_dispatch_packet_t> copies(packets.size());
++  std::vector<uint8_t*> views;
++  views.reserve(packets.size());
++  for (size_t i = 0; i < packets.size(); ++i) {
++    std::memcpy(&copies[i], packets[i], sizeof(copies[i]));
++    views.push_back(reinterpret_cast<uint8_t*>(&copies[i]));
++  }
++  return dispatchAqlPacketBatchImpl(views, names, command, &dependencies, completion);
++}
++
+ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                                         const std::vector<std::string>& kernelNames,
+                                         amd::AccumulateCommand* vcmd) {
++  return dispatchAqlPacketBatchImpl(packets, kernelNames, vcmd, nullptr, 0);
++}
++
++bool VirtualGPU::dispatchAqlPacketBatchImpl(const std::vector<uint8_t*>& packets,
++    const std::vector<std::string>& kernelNames, amd::AccumulateCommand* vcmd,
++    const std::vector<uint64_t>* raw_dependencies, uint64_t graph_completion) {
+   if (vcmd == nullptr || packets.empty() || packets.size() != kernelNames.size()) {
+     return false;
+   }
+ 
+   amd::ScopedLock lock(execution());
+-  if (vcmd->graphKernelRetirementRequested()) {
++  if (graph_completion == 0 && vcmd->graphKernelRetirementRequested()) {
+     vcmd->clearGraphKernelRetirementRequest();
+     const auto* last = reinterpret_cast<const hsa_kernel_dispatch_packet_t*>(packets.back());
+     const bool ordered_tail = extractAqlBits(last->header, HSA_PACKET_HEADER_TYPE,
+@@ -1699,10 +1812,13 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+     void* hw_event = entry_event->NotifyEvent() != nullptr
+         ? entry_event->NotifyEvent()->HwEvent() : entry_event->HwEvent();
+     if (hw_event == nullptr) {
+-      profilingEnd();
+-      return false;  // Materialization was required before graph submission.
++      if (graph_completion == 0 || entry_event->status() != CL_COMPLETE) {
++        profilingEnd();
++        return false;  // Materialization was required before graph submission.
++      }
++    } else {
++      Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
+     }
+-    Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
+     auto producer = entry_event->command().queue();
+     if (producer != nullptr && producer != vcmd->queue() &&
+         producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
+@@ -1735,6 +1851,18 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+     vcmd->consumeGraphEntryEvent();  // Ownership is deliberately not consumed.
+   }
+ 
++  if (raw_dependencies != nullptr && !raw_dependencies->empty()) {
++    BreakNativeKernelHistory();
++    // Only this generation's private handles enter this path. No tracker import,
++    // CPU load, native-wait admission, profiling signal, or host handler.
++    for (size_t i = 0; i < raw_dependencies->size(); ++i) {
++      barrier_packet_.dep_signal[i % 5] = hsa_signal_t{(*raw_dependencies)[i]};
++      if (i % 5 == 4 || i + 1 == raw_dependencies->size()) {
++        dispatchBarrierPacket(kNopPacketHeader, true);
++      }
++    }
++  }
++
+   // Add all kernel names in bulk
+   vcmd->setKernelNamesRef(&kernelNames);
+ 
+@@ -1744,7 +1872,13 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+       reinterpret_cast<const std::vector<hsa_kernel_dispatch_packet_t*>&>(packets);
+   const bool kernel_retirement = vcmd->graphKernelRetirementSubmitting();
+   bool result = dispatchGenericAqlPacketBatch(aqlPackets, false, false, &kernelNames,
+-                                             kernel_retirement);
++                                             kernel_retirement, graph_completion);
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && graph_completion != 0) {
++    fprintf(stderr, "GRAPH_LOCAL_BATCH command=%p physical=%llu packets=%zu waits=%zu tail=%llu status=%u\n",
++            static_cast<void*>(vcmd), static_cast<unsigned long long>(gpu_queue_->id),
++            packets.size(), raw_dependencies == nullptr ? 0 : raw_dependencies->size(),
++            static_cast<unsigned long long>(graph_completion), result);
++  }
+   if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && kernel_retirement && result) {
+     fprintf(stderr, "GRAPH_KERNEL_RETIRE command=%p physical=%llu packets=%zu signal=%llu\n",
+             static_cast<void*>(vcmd), static_cast<unsigned long long>(gpu_queue_->id),
+diff --git a/rocclr/device/rocm/rocvirtual.hpp b/rocclr/device/rocm/rocvirtual.hpp
+index 65fade9..9c65710 100644
+--- a/rocclr/device/rocm/rocvirtual.hpp
++++ b/rocclr/device/rocm/rocvirtual.hpp
+@@ -512,6 +512,15 @@ class VirtualGPU : public device::VirtualDevice {
+   bool dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                               const std::vector<std::string>& kernelNames,
+                               amd::AccumulateCommand* vcmd = nullptr);
++  std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) override;
++  bool resetGraphSignalArena(GraphSignalArena& arena, amd::AccumulateCommand& command) override;
++  bool graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const override;
++  bool dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>& dependencies, uint64_t completion) override;
++  bool dispatchAqlPacketBatchImpl(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>* dependencies, uint64_t completion);
+   template <typename AqlPacket> bool dispatchGenericAqlPacket(AqlPacket* packet, uint16_t header,
+                                                               uint16_t rest, bool blocking,
+                                                               bool attach_signal = false);
+@@ -519,7 +528,8 @@ class VirtualGPU : public device::VirtualDevice {
+   template <typename AqlPacket> bool dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
+                                                                    bool blocking, bool attach_signal = false,
+                                                                    const std::vector<std::string>* kernelNames = nullptr,
+-                                                                   bool tail_completion_only = false);
++                                                                   bool tail_completion_only = false,
++                                                                   uint64_t graph_completion = 0);
+ 
+   bool dispatchCounterAqlPacket(hsa_ext_amd_aql_pm4_packet_t* packet, const uint32_t gfxVersion,
+                                 bool blocking, const hsa_ven_amd_aqlprofile_1_00_pfn_t* extApi);
+diff --git a/rocclr/utils/flags.hpp b/rocclr/utils/flags.hpp
+index 8478659..d1bab74 100644
+--- a/rocclr/utils/flags.hpp
++++ b/rocclr/utils/flags.hpp
+@@ -169,6 +169,10 @@ release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
+         "Diagnostic: import graph dependencies in the next captured batch")  \
+ release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
+         "Diagnostic: fail a final-kernel batch after a published prefix.")    \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS, false,                    \
++        "Diagnostic: graph-owned GPU-local dependency signals")             \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST, false,                \
++        "Diagnostic: matched host backing for graph-owned signals")          \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE, false,                     \
+         "Diagnostic: retire an ordered captured region on its final kernel.") \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL, false,                        \

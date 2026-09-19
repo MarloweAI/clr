@@ -1,0 +1,95 @@
+diff --git a/hipamd/src/hip_graph_internal.cpp b/hipamd/src/hip_graph_internal.cpp
+index 62b2bc4..26c6d32 100644
+--- a/hipamd/src/hip_graph_internal.cpp
++++ b/hipamd/src/hip_graph_internal.cpp
+@@ -974,8 +974,22 @@ hipError_t GraphExec::Init() {
+         // Queue pooling can assign one candidate the same hardware queue as
+         // the launch stream. Give UpdateStreams a bounded spare so it can
+         // select independent queues before using its collision fallback.
+-        const bool add_spare = use_segment_scheduling_ && dev_id == instantiateDeviceId_ &&
+-                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES;
++        // Packet-capture-eligible kernel graphs can use independent compute queues.
++        // Mixed graphs use the spare only with the qualified placement policy;
++        // otherwise preserve their required-count queue allocation.
++        const bool qualified_spare = entry_fused_device_id_ == dev_id ||
++                                     assignment_device_id_ == dev_id;
++        const bool add_spare = GPU_GRAPH_DIAGNOSTIC_SPARE && use_segment_scheduling_ &&
++                               dev_id == instantiateDeviceId_ &&
++                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES &&
++                               (!GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE || qualified_spare);
++        if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++          fprintf(stderr, "GRAPH_SPARE_POLICY graph=%p device=%d required=%u spare_requested=%u "
++                  "qualified_policy=%u kernel_eligible=%u placement_eligible=%u\n",
++                  static_cast<void*>(this), dev_id, num_streams, add_spare,
++                  GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE,
++                  entry_fused_device_id_ == dev_id, assignment_device_id_ == dev_id);
++        }
+         status = CreateStreams(num_streams + (add_spare ? 1u : 0u), dev_id);
+         if (status == hipErrorOutOfMemory && add_spare) {
+           // The spare is optional. CreateStreams cleans up on failure, so
+@@ -1568,6 +1582,14 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+     for (int segment_id : segments_at_level) {
+       const auto& segment = segments_[segment_id];
+       hip::Stream* current_stream = segment_to_stream[segment_id];
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_QUEUE_EXECUTE graph=%p segment=%d level=%d nodes=%zu "
++                "logical=%llu physical=%llu is_launch=%u\n",
++                static_cast<void*>(this), segment_id, level, segment.nodes.size(),
++                static_cast<unsigned long long>(current_stream->GetStreamId()),
++                static_cast<unsigned long long>(current_stream->getQueueID()),
++                current_stream == launch_stream);
++      }
+ 
+       // Handle dependencies: add wait markers if dependent segments are on different streams
+       // Look up the specific command for each dependency segment
+@@ -1795,6 +1817,14 @@ void GraphExec::UpdateStreams(hip::Stream* launch_stream) {
+   streams_.push_back(launch_stream);
+   if (parallel_streams_.find(devId) == parallel_streams_.end()) {
+     LogPrintfError("UpdateStreams failed for device id:%d", devId);
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_QUEUE_SELECTION graph=%p spare=%u max_streams=%d selected=1 launch=%llu\n",
++              static_cast<void*>(this), GPU_GRAPH_DIAGNOSTIC_SPARE, max_streams_,
++              static_cast<unsigned long long>(launch_stream->getQueueID()));
++      fprintf(stderr, "GRAPH_QUEUE_SELECTED graph=%p index=0 logical=%llu physical=%llu is_launch=1\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(launch_stream->GetStreamId()),
++              static_cast<unsigned long long>(launch_stream->getQueueID()));
++    }
+     return;
+   }
+   auto parallel_streams = parallel_streams_[devId];
+@@ -1815,6 +1845,18 @@ void GraphExec::UpdateStreams(hip::Stream* launch_stream) {
+   for (int i = streams_.size(), j = 0; i < max_streams_ && j < collided_streams.size(); i++, j++) {
+     streams_.push_back(collided_streams[j]);
+   }
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_QUEUE_SELECTION graph=%p spare=%u max_streams=%d selected=%zu launch=%llu\n",
++            static_cast<void*>(this), GPU_GRAPH_DIAGNOSTIC_SPARE, max_streams_, streams_.size(),
++            static_cast<unsigned long long>(launch_stream->getQueueID()));
++    for (size_t index = 0; index < streams_.size(); ++index) {
++      auto* stream = streams_[index];
++      fprintf(stderr, "GRAPH_QUEUE_SELECTED graph=%p index=%zu logical=%llu physical=%llu is_launch=%u\n",
++              static_cast<void*>(this), index, static_cast<unsigned long long>(stream->GetStreamId()),
++              static_cast<unsigned long long>(stream->getQueueID()), stream == launch_stream);
++    }
++  }
++
+ }
+ 
+ 
+diff --git a/rocclr/utils/flags.hpp b/rocclr/utils/flags.hpp
+index 4f83919..afb6951 100644
+--- a/rocclr/utils/flags.hpp
++++ b/rocclr/utils/flags.hpp
+@@ -153,6 +153,12 @@ release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
+         "Experimental gfx950 native event pre-wait")                          \
+ release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
+         "Place longer graph segments first without changing enqueue order")  \
++release(bool, GPU_GRAPH_DIAGNOSTIC_SPARE, true,                               \
++        "Diagnostic control for the existing optional graph spare stream")   \
++release(bool, GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE, false,                    \
++        "Restrict optional spare to qualified kernel or placement graphs")   \
++release(bool, GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE, false,                        \
++        "Untimed graph stream selection and actual queue assignment receipts") \
+ release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
+          "The maximum number of HW queues allocated per device")              \
+ release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \

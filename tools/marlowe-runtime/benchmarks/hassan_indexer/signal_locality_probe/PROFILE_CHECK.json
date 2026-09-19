@@ -1,0 +1,22 @@
+{
+  "m0p1": {
+    "q_dispatch_median_us": 4.56,
+    "k_dispatch_median_us": 4.48,
+    "dispatch_intervals_overlapping": 6400,
+    "pair_count": 6400
+  },
+  "m1p1": {
+    "q_dispatch_median_us": 4.56,
+    "k_dispatch_median_us": 4.48,
+    "dispatch_intervals_overlapping": 6400,
+    "pair_count": 6400
+  },
+  "m2p1": {
+    "q_dispatch_median_us": 4.6,
+    "k_dispatch_median_us": 4.6,
+    "dispatch_intervals_overlapping": 6400,
+    "pair_count": 6400
+  },
+  "source_sha256": "50bff6885d018b98e18d9a70f7d3558eb19a6daa96672ccc6eaf44295dae34e9",
+  "note": "Dispatch profiling envelopes, not instrumented wave execution intervals. No clock-rate attribution."
+}
