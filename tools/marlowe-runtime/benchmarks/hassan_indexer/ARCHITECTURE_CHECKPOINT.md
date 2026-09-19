@@ -1,4 +1,4 @@
-# Hassan Q/K architecture checkpoint after job 55065
+# Hassan Q/K architecture checkpoint after job 55130
 
 The goal remains a substantial speedup from true parallel execution of the original Q/K workload, followed by regression checks on the other microbenchmarks. It is not achieved. Changing kernels or shapes, serializing logical streams, or weakening dependencies would not meet that goal. There is no newly qualified runtime and no full-model work is planned.
 
@@ -6,7 +6,7 @@ Application transparency is a requirement: the existing application, HIP/PyTorch
 
 [Job 55065](SIGNAL_LOCALITY_RESULTS.md) supplies a new causal lead: moving internal completion signals from matched host-page storage to GPU-local memory reduces original fully joined direct replay from 9.734 to 7.222 µs/pair (25.81%). The profiled interval before both next dispatches start falls from 5.16 to 2.56 µs. All four rounds improve, with unchanged kernels, arguments, dependencies and fences. The normal pooled-host control is 9.653 µs/pair.
 
-This is not a usable runtime candidate yet. Its CPU preparation/readback/verification takes 15.896 µs/pair and is outside that primary execution interval. Historical serial execution around 8.8 µs/pair has a different boundary and is not a matched win. The next architecture must batch signal initialization on the GPU, retain correct host retirement/lifetimes, and demonstrate lower total time in unchanged HIP/PyTorch replay. Earlier mechanisms remain closed.
+[Job 55130](GPU_SIGNAL_RESET_RESULTS.md) removes the per-signal CPU preparation from replay using one GPU scatter reset and includes reset, ordering, publication and final host-visible completion. Matched host/local total time is 9.722 → 7.353 µs/pair (24.37%). This remains direct replay: one reset covers 200 pairs, whereas actual HIP graph boundaries can require more resets. The short pilot exposes fixed helper cost and is not a nonregression result. Actual HIP/PyTorch integration with per-inflight generations, ordinary host retirement and unchanged serial/two-stream comparisons is still required. Historical serial execution around 8.8 µs/pair has a different boundary and is not a matched win. Earlier mechanisms remain closed.
 
 ## Closed mechanisms
 
