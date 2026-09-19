@@ -2,7 +2,7 @@
 
 **There is now useful original-sized architectural headroom: same-object GPU-local completion chaining reduces packet-replay time from 14.994 to 11.732 µs per pair (21.75%).** This is an uninterrupted-batch feasibility result, not a new HIP/PyTorch runtime or a production win.
 
-Job 55418 completed 0:0 on node2 with one GPU. The frozen source passed independent review; strict remote/local audits pass all 576 timing trials and 4,590 numerical checks. All trials are retained. Original Q/K kernel code, shapes, arguments, resources, dependencies and each graph's full join are unchanged. Both arms use the previously reviewed fence placement and cached signal reset.
+Job 55418 completed 0:0 on node2 with one GPU. The frozen source passed independent review; strict remote/local audits pass all 576 timing trials and 4,590 numerical checks. An [independent post-run audit](boundary_chain_probe/POSTRUN_REVIEW.md) rehashed the raw evidence and reproduced every median and paired-round contrast. All trials are retained. Original Q/K kernel code, shapes, arguments, resources, dependencies and each graph's full join are unchanged. Both arms use the previously reviewed fence placement and cached signal reset.
 
 | Graph | Private host, explicit entry | Private host, chained | GPU local, explicit entry | GPU local, chained |
 |---|---:|---:|---:|---:|
