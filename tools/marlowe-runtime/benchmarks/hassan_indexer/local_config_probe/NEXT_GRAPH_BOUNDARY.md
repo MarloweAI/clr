@@ -1,0 +1,23 @@
+# Next architecture question: graph entry and final retirement
+
+The grouped local-token implementation is a useful mechanism, but it leaves the original-sized two-node graph on the older path. Its 16.68 µs/pair remains worse than stock 14.11 and same-runtime serial 12.49. Minimal-parent settings worsen it to 21.56; native-off in that minimal configuration remains 21.44. Do not claim that these results isolate a specific parent flag or every possible native-wait interaction.
+
+## First principles
+
+A graph with Q and K on separate queues needs an entry dependency from the launch stream, concurrent computation, and a final join before subsequent launch-stream work. The host needs one completion event for the graph and sufficient ownership to keep every resource alive. It does not inherently need a separate host-visible signal at each internal GPU edge. The grouped experiment validates that distinction for internal edges. The next question is whether the same separation can reduce entry/final overhead for a graph with only two roots.
+
+Current `RunGraphSignals` is deliberately conservative: one GPU reset per launch, ordinary reset completion as entry frontier, ordinary retirement per touched logical stream, and a final marker joining those ordinary events. It requires an internal cross-physical dependency; a two-root graph has none. Simply removing that guard would introduce reset cost without removing the host-visible boundary traffic and is not an architectural solution.
+
+## Candidate to investigate, not yet implement or qualify
+
+A graph-owned GPU dependency channel could also carry an entry token and side-tail tokens. The launch queue would publish an ordered entry completion after all predecessors; side queues wait on it, run the original kernels, and publish private tail completions. A final ordered join on the launch queue would produce one ordinary host-visible graph completion. This must preserve distinct physical queues, all original edges/scopes, subsequent launch-stream ordering and asynchronous input visibility. Per-graph ownership must retain unqueued submission contexts and all resources until the final completion. Partial-publication failures still need ordinary per-lane drainage if a private tail might never have been published.
+
+This is not yet a safe runtime patch. Source review must resolve virtual-queue bookkeeping, completion ownership, callbacks, failure drainage and every CPU signal-access path before changing retirement. `TrackQueueProgress`/`IsQueueIdle` cannot expose private GPU handles or treat a side queue as idle prematurely. Current raw packet lowering advances the write index without updating its host-readable completion, which conservatively leaves the queue non-idle until ordinary retirement. `ReleaseHwQueue` uses that predicate when dynamic queues are enabled. Profiling and unsupported graphs must retain the established path.
+
+Reset cost is also unresolved for tiny graphs. The existing private allocation is public fine-grained GPU memory. `BusyWaitSignal::StoreRelaxed`/`StoreRelease` use atomic stores, whereas destruction deliberately avoids a CPU locked RMW. The earlier CPU-preparation penalty included a CPU readback plus two guard reads for every signal, not just reset stores. That measurement does not establish the cost of a safe store-only reset. A store-only design still needs a justified host-store-to-GPU-publication ordering contract; omitting readbacks without that proof is not acceptable. GPU reset remains the known-safe control and all reset/publication cost belongs in timing.
+
+## Bounded next evidence
+
+First settle that reset visibility and retirement contract from source. If defensible, use original Q/K packets in a small packet-level comparison that preserves each two-node graph's entry and final join. Compare matched host/local token storage and conventional per-lane host exits versus one graph host completion. Include reset, packet publication, final observation and any ordering operation in the total; no deliberate gate hold or excluded per-graph preparation. Verify both branch outputs, later-graph dependencies, all unique completion values and resource lifetimes. This would establish feasibility only; a matched unchanged HIP/PyTorch g1 result is still required after integration.
+
+Do not reuse the earlier fully flattened direct replay as proof of short-graph boundaries. Do not change application graphs, kernels, shapes or scheduler to qualify. Preserve the grouped winner as a regression control. If the visibility/ownership contract is unsound, or the measured total boundary cost offers no useful headroom, close this lead and evaluate whether to switch to Goal 2 early. Hard cutoff remains 2026-09-20 09:00 UTC.
