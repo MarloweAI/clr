@@ -1,0 +1,19 @@
+{
+  "host": "marlowe-login1",
+  "submission_attempted": true,
+  "script": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build_submit_v9.sh",
+  "remote_workdir": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919",
+  "validate": "test -f /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/BUILD_COMPLETE-v9",
+  "log": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-slurm-{job_id}.log",
+  "job_id": 55762,
+  "last_event": {
+    "event": "COMPLETE",
+    "utc": "2026-09-19T07:01:37Z",
+    "job_id": 55762,
+    "validation": "passed"
+  },
+  "slurm_state": "COMPLETED",
+  "slurm_exit": "0:0",
+  "validation_output": "",
+  "validation_passed": true
+}

@@ -1,0 +1,453 @@
+{
+  "complete": true,
+  "job": "55779",
+  "revision": "v9",
+  "build": {
+    "revision": "v9",
+    "source_manifest_sha256": "a487672f42f19a8fb6660f14cef86b546a9eccd719541cdc886e3cbcbeb25b3e",
+    "full_patch_sha256": "fde6710dbf1832cf68544665df52fb15a094669c10db534284ed664725f05df8",
+    "candidate_patch_sha256": "6fb9bca82c8eb0a488959cd412f83643c9d44adb405174053745934e852e6bf5",
+    "commands": [
+      [
+        "git",
+        "clone",
+        "--shared",
+        "/workspace/home/sasha/amd-runtime-production/iterations/c1-runtime-recovery-20260917/release-clr",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v9"
+      ],
+      [
+        "git",
+        "-C",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v9",
+        "checkout",
+        "--detach",
+        "cab5670a350678f2b0a6feb388fcbbca56c426a1"
+      ],
+      [
+        "git",
+        "-C",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v9",
+        "apply",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/full-v9.patch"
+      ],
+      [
+        "cmake",
+        "-S",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-src-v9",
+        "-B",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-v9",
+        "-DCLR_BUILD_HIP=ON",
+        "-DCLR_BUILD_OCL=OFF",
+        "-DHIP_PLATFORM=amd",
+        "-D__HIP_ENABLE_PCH=OFF",
+        "-DHIP_COMMON_DIR=/workspace/home/sasha/amd-runtime-production/iterations/native-wait-neutral-20260917/release8-build/hip",
+        "-DCMAKE_PREFIX_PATH=/opt/rocm",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        "-DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang",
+        "-DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++"
+      ],
+      [
+        "cmake",
+        "--build",
+        "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/build-v9",
+        "-j8"
+      ]
+    ],
+    "libraries": {
+      "libamdhip64.so": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a",
+      "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+    },
+    "compiler": "AMD clang version 22.0.0git (https://github.com/RadeonOpenCompute/llvm-project roc-7.2.4 26084 f58b06dce1f9c15707c5f808fd002e18c2accf7e)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: /opt/rocm-7.2.4/lib/llvm/bin\nConfiguration file: /opt/rocm-7.2.4/lib/llvm/bin/clang++.cfg\n"
+  },
+  "sources": {
+    "ownership_boundary_v8.py": "e3069e5fa9da1d62cf9c950dcd1cb69bb1d56428a65368912487fad27de775fa",
+    "ownership_module.cpp": "24e5294e4268f4312d8b04c60800aecbb5ce6fd69526c28299af9c36f2efa7e4",
+    "graph_frontier_ownership_v3.cpp": "343ddabda8e81c45b7abf91d534588ab68cbe58604c0f0594c59a71ef9f3c2c9",
+    "preflight.py": "dcfab5c73fe97185cc8d93b28e5aa5ddfc3be24ff4d80bc44f757b7ec439158a",
+    "protocol-v8-tests.json": "e8fe1eefd9f5940bd18ac1c397e223a190fad3d0b4811514c660e07f8147c638"
+  },
+  "binaries": {
+    "module0.hsaco": "e175526a49425c23925dbb9429ea7fb7db38a8ed22c6ae8b045acd36ed8427e0",
+    "module1.hsaco": "70c21809517bb1873b418f5bd7eae0376b28743a8f0c8e44c327ddf07d2c1f7c",
+    "ownership": "042a46fc802cbe984df31be0653b4b24f858acf2b10ad7571d822dcd762cb770"
+  },
+  "runs": [
+    {
+      "name": "e0-stock",
+      "mode": "stock",
+      "early": 0,
+      "returncode": 0,
+      "files": {
+        "stderr.log": "bf62a6fe334e2b3e7648d81f820d9abc625911c83128d5bff0ec8fee8e2188c3",
+        "stdout.log": "8b53e70015403bb399db7d1f26641fff35660a4cf8e66f557298086b215a3fd7"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "0",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "0",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "0",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "0"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "f1043337461c8e54ee135e95fa979a7d0e4344676ad5b0554652f844f8f098ac",
+        "libhsa-runtime64.so": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+      },
+      "trace": {
+        "launches": 0,
+        "chained": 0,
+        "peak": 0
+      },
+      "result": {
+        "passed": true,
+        "checked_values": 4,
+        "function_update_ms": 0.01625,
+        "first_module_unload_ms": 2e-05,
+        "destroyed_before_sync": true
+      },
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/opt/rocm/lib/libamdhip64.so",
+          "sha256": "f1043337461c8e54ee135e95fa979a7d0e4344676ad5b0554652f844f8f098ac"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/opt/rocm/lib/libhsa-runtime64.so",
+          "sha256": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+        }
+      }
+    },
+    {
+      "name": "e0-off",
+      "mode": "off",
+      "early": 0,
+      "returncode": 0,
+      "files": {
+        "stderr.log": "ff10cb63ed57d7b7aec969540089447a37cae4efb681e697d51cc669c1ff54d6",
+        "stdout.log": "bb69423aa8c9ee4dc75aaddd74edb54853334b7bac3779c5d97ca0df2ae7647d"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "1",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "1"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a",
+        "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+      },
+      "trace": {
+        "launches": 0,
+        "chained": 0,
+        "peak": 0
+      },
+      "result": {
+        "passed": true,
+        "checked_values": 4,
+        "function_update_ms": 0.03471,
+        "first_module_unload_ms": 2e-05,
+        "destroyed_before_sync": true
+      },
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libamdhip64.so",
+          "sha256": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libhsa-runtime64.so",
+          "sha256": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+        }
+      }
+    },
+    {
+      "name": "e0-on",
+      "mode": "on",
+      "early": 0,
+      "returncode": 0,
+      "files": {
+        "stderr.log": "b3c64160782118fee34a7d8ae2c14c6fed6c66de38d0e245aa0014bdb445efca",
+        "stdout.log": "060bbb272a8edf13ed2491a1639cfd78ddb55afff5ef713a0057309f13a3f530"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "1",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "1"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a",
+        "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+      },
+      "trace": {
+        "launches": 2,
+        "chained": 1,
+        "peak": 2
+      },
+      "result": {
+        "passed": true,
+        "checked_values": 4,
+        "function_update_ms": 0.09151,
+        "first_module_unload_ms": 3e-05,
+        "destroyed_before_sync": true
+      },
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libamdhip64.so",
+          "sha256": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libhsa-runtime64.so",
+          "sha256": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+        }
+      }
+    },
+    {
+      "name": "e1-stock",
+      "mode": "stock",
+      "early": 1,
+      "returncode": 2,
+      "files": {
+        "stderr.log": "9aa6aeba6f1842f091c085c012d1da4a1e81c20fb5a2520269370ca7475f32a7",
+        "stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "0",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "0",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "0",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "0"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "f1043337461c8e54ee135e95fa979a7d0e4344676ad5b0554652f844f8f098ac",
+        "libhsa-runtime64.so": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+      },
+      "trace": null,
+      "result": null,
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/opt/rocm/lib/libamdhip64.so",
+          "sha256": "f1043337461c8e54ee135e95fa979a7d0e4344676ad5b0554652f844f8f098ac"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/opt/rocm/lib/libhsa-runtime64.so",
+          "sha256": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+        }
+      }
+    },
+    {
+      "name": "e1-off",
+      "mode": "off",
+      "early": 1,
+      "returncode": 2,
+      "files": {
+        "stderr.log": "57b6096dc7ad55277090ba49926b3cb708b81d73b4c5997b4e9b042cb14ea859",
+        "stdout.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "1",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "1"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a",
+        "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+      },
+      "trace": null,
+      "result": null,
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libamdhip64.so",
+          "sha256": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libhsa-runtime64.so",
+          "sha256": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+        }
+      }
+    },
+    {
+      "name": "e1-on",
+      "mode": "on",
+      "early": 1,
+      "returncode": 0,
+      "files": {
+        "stderr.log": "df1e898db8f41c0baa482fed45b6a1000659da5f60fb4d7be2748cbbc4e72ea9",
+        "stdout.log": "0b0f5dcf7a44bb5fec0d82ed2e75b7e2eed14efb1446a97bcabd74f91cfff929"
+      },
+      "controls": {
+        "AMD_DIRECT_DISPATCH": "1",
+        "AMD_LOG_LEVEL": "0",
+        "AMD_LOG_MASK": "0",
+        "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+        "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+        "GPU_NATIVE_EVENT_TRACE": "0",
+        "GPU_STREAMOPS_CP_WAIT": "0",
+        "GPU_MAX_HW_QUEUES": "4",
+        "GPU_NATIVE_EVENT_WAIT": "1",
+        "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+        "HIP_VISIBLE_DEVICES": "0",
+        "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+        "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+        "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+        "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+        "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "0",
+        "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER": "1",
+        "GPU_GRAPH_DIAGNOSTIC_FRONTIER_DISTRIBUTED": "1"
+      },
+      "expected_libraries": {
+        "libamdhip64.so": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a",
+        "libhsa-runtime64.so": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+      },
+      "trace": {
+        "launches": 2,
+        "chained": 1,
+        "peak": 2
+      },
+      "result": {
+        "passed": true,
+        "checked_values": 4,
+        "function_update_ms": 0.09263,
+        "first_module_unload_ms": 0.02465,
+        "destroyed_before_sync": true
+      },
+      "mapped": {
+        "libamdhip64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libamdhip64.so",
+          "sha256": "819045ef663e9831cdfef9b49160b3fee8ab8223d46114e086f54e279cf7910a"
+        },
+        "libhsa-runtime64.so": {
+          "path": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/lib-v9/libhsa-runtime64.so",
+          "sha256": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+        }
+      }
+    }
+  ]
+}

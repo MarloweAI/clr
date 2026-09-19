@@ -1,0 +1,18 @@
+{
+  "host": "marlowe-login1",
+  "submission_attempted": true,
+  "script": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/correctness_submit_v9.sh",
+  "remote_workdir": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919",
+  "validate": "cd /workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919 && python3 boundary_transition.py --audit --out transition-j{job_id} && python3 preflight_boundary_v8.py --audit --out preflight-j{job_id} && python3 ownership_boundary_v8.py --audit --out ownership-checks-j{job_id} && python3 capacity_boundary_v8.py --audit --out capacity-j{job_id}",
+  "log": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-frontier-20260919/preflight-slurm-{job_id}.log",
+  "job_id": 55775,
+  "last_event": {
+    "event": "FAILED",
+    "utc": "2026-09-19T07:05:11Z",
+    "job_id": 55775,
+    "slurm_state": "FAILED",
+    "slurm_exit": "1:0"
+  },
+  "slurm_state": "FAILED",
+  "slurm_exit": "1:0"
+}
