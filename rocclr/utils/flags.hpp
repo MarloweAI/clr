@@ -151,6 +151,38 @@ release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
         "Trace native event counts at queue destruction")                     \
 release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
         "Experimental gfx950 native event pre-wait")                          \
+release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
+        "Place longer graph segments first without changing enqueue order")  \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SPARE, true,                               \
+        "Diagnostic control for the existing optional graph spare stream")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE, false,                    \
+        "Restrict optional spare to qualified kernel or placement graphs")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE, false,                  \
+        "Diagnostic: place eligible flat kernel graph on its launch stream") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE, false,                    \
+        "Diagnostic: one accumulator for a coalesced flat kernel graph")      \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE, false,                      \
+        "Diagnostic: share captured-kernel retirement within logical lanes") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL, false,                                          \
+        "Diagnostic: omit success-only final side waits already covered by explicit graph ancestry") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
+        "Diagnostic: import graph dependencies in the next captured batch")  \
+release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
+        "Diagnostic: fail a final-kernel batch after a published prefix.")    \
+release(uint, GPU_GRAPH_DIAGNOSTIC_INTERNAL_JOINT, 0,                         \
+        "Internal terminal pair: 0 ordinary, 1 joint, 2 prepared separate")     \
+release(uint, GPU_GRAPH_DIAGNOSTIC_INTERNAL_TRACE, 0,                     \
+        "Internal trace: 1 packet receipts, 2 sparse selection totals")       \
+release(uint, GPU_GRAPH_DIAGNOSTIC_INTERNAL_FAIL, 0,                         \
+        "Internal pair fault: 1 before preparation, 2 after publication")      \
+release(bool, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE, false,                     \
+        "Diagnostic: retire an ordered captured region on its final kernel.") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL, false,                        \
+        "Diagnostic: join graph side tails in the final completion marker")  \
+release(uint, GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER, 0,                      \
+        "Diagnostic: fail after this many published lane-retirement segments") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE, false,                        \
+        "Untimed graph stream selection and actual queue assignment receipts") \
 release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
          "The maximum number of HW queues allocated per device")              \
 release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \

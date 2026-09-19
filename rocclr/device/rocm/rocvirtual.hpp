@@ -500,7 +500,11 @@ class VirtualGPU : public device::VirtualDevice {
   //! Dispatches a barrier with blocking HSA signals
   void dispatchNativeEventWait(hsa_signal_t signal);
   void dispatchNativeWaitRetirement(hsa_signal_t signal);
-  void dispatchBlockingWait();
+  bool dispatchBlockingWait(hsa_barrier_and_packet_t* internal_prefix = nullptr,
+                            const hsa_barrier_and_packet_t* internal_signals = nullptr);
+  bool dispatchGraphInternalPair(hsa_kernel_dispatch_packet_t* packet,
+                                 hsa_barrier_and_packet_t& prefix,
+                                 amd::AccumulateCommand& command);
 
   bool dispatchAqlPacket(hsa_kernel_dispatch_packet_t* packet, uint16_t header, uint16_t rest,
                          bool blocking = true, bool capturing = false,
@@ -518,7 +522,8 @@ class VirtualGPU : public device::VirtualDevice {
   //! Dispatches multiple AQL packets with a single doorbell ring
   template <typename AqlPacket> bool dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
                                                                    bool blocking, bool attach_signal = false,
-                                                                   const std::vector<std::string>* kernelNames = nullptr);
+                                                                   const std::vector<std::string>* kernelNames = nullptr,
+                                                                   bool tail_completion_only = false);
 
   bool dispatchCounterAqlPacket(hsa_ext_amd_aql_pm4_packet_t* packet, const uint32_t gfxVersion,
                                 bool blocking, const hsa_ven_amd_aqlprofile_1_00_pfn_t* extApi);
@@ -640,22 +645,22 @@ class VirtualGPU : public device::VirtualDevice {
   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
   ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
   bool native_wait_enabled_ = false;
-  // Require 256 actual unread kernel packets before adding a native prewait.
-  // Short dependencies and drained histories use ordinary AQL.
-  static constexpr uint64_t kNativeWaitMinDispatches = 256;
-  // Keep positions, not packet-span length: markers and other streams' packets
-  // never count as kernels. A fresh read index at/before the oldest retained
-  // position proves that all 256 of this stream's kernels remain unread.
-  uint64_t native_kernel_positions_[kNativeWaitMinDispatches]{};
+  // Admission is a cost heuristic; keep the history storage independent of it.
+  static constexpr uint64_t kNativeWaitMinDispatches = 24;
+  static constexpr uint64_t kNativeWaitHistoryCapacity = 256;
+  // Record actual kernel positions, not packet spans that include other work.
+  uint64_t native_kernel_positions_[kNativeWaitHistoryCapacity]{};
   uint64_t native_history_queue_id_ = std::numeric_limits<uint64_t>::max();
   unsigned native_history_head_ = 0;
   unsigned native_history_count_ = 0;
   uint64_t NativeThresholdIndex() const {
     if (gpu_queue_ == nullptr || native_history_queue_id_ != gpu_queue_->id ||
-        native_history_count_ != kNativeWaitMinDispatches) {
+        native_history_count_ < kNativeWaitMinDispatches) {
       return std::numeric_limits<uint64_t>::max();
     }
-    return native_kernel_positions_[native_history_head_];
+    return native_kernel_positions_[
+        (native_history_head_ + kNativeWaitHistoryCapacity - kNativeWaitMinDispatches) %
+        kNativeWaitHistoryCapacity];
   }
   void BreakNativeKernelHistory() {
     native_history_head_ = native_history_count_ = 0;
@@ -667,9 +672,14 @@ class VirtualGPU : public device::VirtualDevice {
       native_history_head_ = native_history_count_ = 0;
     }
     native_kernel_positions_[native_history_head_] = index;
-    native_history_head_ = (native_history_head_ + 1) % kNativeWaitMinDispatches;
-    if (native_history_count_ < kNativeWaitMinDispatches) ++native_history_count_;
+    native_history_head_ = (native_history_head_ + 1) % kNativeWaitHistoryCapacity;
+    if (native_history_count_ < kNativeWaitHistoryCapacity) ++native_history_count_;
   }
+  uint64_t internal_selected_ = 0, internal_ready_ = 0, internal_pending_ = 0;
+  uint64_t internal_supported_ = 0, internal_deferred_ = 0;
+  uint64_t internal_joint_ = 0, internal_separate_ = 0;
+  uint64_t internal_wrap_ = 0, internal_capacity_ = 0;
+  void traceInternalSummary() const;
   uint64_t native_wait_count_ = 0;
   uint64_t native_irq_wait_count_ = 0;
   uint64_t native_pool_fallback_count_ = 0;

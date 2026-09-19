@@ -1394,6 +1394,20 @@ class AccumulateCommand : public Command {
   //! Kernel names and timestamps list for activity profiling
   std::vector<std::string> kernelNames_;
   const std::vector<std::string>* kernelNamesRef_ = nullptr;
+  // Separate from eventWaitList: import only once, retain through GPU retirement.
+  Event* graph_entry_event_ = nullptr;
+  bool graph_entry_pending_ = false;
+  // Graph-internal waits are imported once at the next captured batch. Keep
+  // their command references through the consumer region's GPU retirement.
+  EventWaitList graph_dependencies_;
+  size_t graph_dependency_begin_ = 0;
+  // Borrowed only across the immediate synchronous seal/enqueue call. GraphExec
+  // owns the captured packet/name vectors until after all submissions complete.
+  const std::vector<uint8_t*>* graph_retirement_packets_ = nullptr;
+  const std::vector<std::string>* graph_retirement_names_ = nullptr;
+  bool graph_kernel_retirement_requested_ = false;
+  bool graph_kernel_retirement_submitting_ = false;
+  bool graph_kernel_retirement_failed_ = false;
   std::vector<std::pair<uint64_t, uint64_t>> tsList_;
 
  public:
@@ -1401,6 +1415,64 @@ class AccumulateCommand : public Command {
   AccumulateCommand(HostQueue& queue, const EventWaitList& eventWaitList = nullWaitList,
                     const Event* waitingEvent = nullptr)
       : Command(queue, CL_COMMAND_TASK, eventWaitList, 0, waitingEvent) {}
+
+  void setGraphEntryEvent(Event* event) {
+    assert(graph_entry_event_ == nullptr && event != nullptr);
+    event->retain();
+    graph_entry_event_ = event;
+    graph_entry_pending_ = true;
+  }
+  Event* pendingGraphEntryEvent() const {
+    return graph_entry_pending_ ? graph_entry_event_ : nullptr;
+  }
+  void consumeGraphEntryEvent() { graph_entry_pending_ = false; }
+  void appendGraphDependencies(const EventWaitList& events) {
+    assert(graph_dependency_begin_ == graph_dependencies_.size());
+    for (auto* event : events) {
+      event->retain();
+      graph_dependencies_.push_back(event);
+    }
+  }
+  const EventWaitList& graphDependencies() const { return graph_dependencies_; }
+  size_t graphDependencyBegin() const { return graph_dependency_begin_; }
+  void consumeGraphDependencies() { graph_dependency_begin_ = graph_dependencies_.size(); }
+  void requestGraphKernelRetirement() {
+    assert(graph_retirement_packets_ == nullptr);
+    graph_kernel_retirement_requested_ = true;
+  }
+  bool graphKernelRetirementRequested() const { return graph_kernel_retirement_requested_; }
+  void clearGraphKernelRetirementRequest() { graph_kernel_retirement_requested_ = false; }
+  void deferGraphKernelRetirement(const std::vector<uint8_t*>* packets,
+                                  const std::vector<std::string>* names) {
+    assert(graph_retirement_packets_ == nullptr && packets != nullptr && names != nullptr);
+    graph_retirement_packets_ = packets;
+    graph_retirement_names_ = names;
+  }
+  const std::vector<uint8_t*>* graphRetirementPackets() const { return graph_retirement_packets_; }
+  const std::vector<std::string>* graphRetirementNames() const { return graph_retirement_names_; }
+  void takeGraphKernelRetirement() {
+    graph_retirement_packets_ = nullptr;
+    graph_retirement_names_ = nullptr;
+    graph_kernel_retirement_requested_ = false;
+    graph_kernel_retirement_submitting_ = true;
+  }
+  bool graphKernelRetirementSubmitting() const { return graph_kernel_retirement_submitting_; }
+  void finishGraphKernelRetirement(bool success) {
+    graph_kernel_retirement_submitting_ = false;
+    graph_kernel_retirement_failed_ = graph_kernel_retirement_failed_ || !success;
+  }
+  bool graphKernelRetirementFailed() const { return graph_kernel_retirement_failed_; }
+  void markGraphKernelRetirementFailed() { graph_kernel_retirement_failed_ = true; }
+  void releaseResources() override {
+    if (graph_entry_event_ != nullptr) {
+      graph_entry_event_->release();
+      graph_entry_event_ = nullptr;
+    }
+    for (auto* event : graph_dependencies_) event->release();
+    graph_dependencies_.clear();
+    graph_dependency_begin_ = 0;
+    Command::releaseResources();
+  }
 
   //! Add kernel name to the list if available
   void addKernelName(const std::string& kernelName) { kernelNames_.push_back(kernelName); }
