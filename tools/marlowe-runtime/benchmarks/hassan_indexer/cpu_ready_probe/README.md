@@ -1,0 +1,3 @@
+# Frozen CPU-ready Q/K publication diagnostic
+
+Source and retained224 timing trials for job54901. See ../CPU_READY_RESULTS.md. No runtime changes or production candidate. The frozen source expects the original /workspace/home/sasha/amd-runtime-production/iterations/hassan-cpu-ready-20260919 path, sibling K build/headers/libraries, hisparse-preview-48593 container and recorded AITER environment. Full packet, mapped-library, numerical, profiling and layer-readiness receipts are at the report's immutable raw roots. Retargeting paths or source requires an explicit new source manifest and result root. Preserve results-j54901.
