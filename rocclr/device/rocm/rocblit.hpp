@@ -284,6 +284,7 @@ class KernelBlitManager : public DmaBlitManager {
     GwsInit,
     InitHeap,
     BatchMemOp,
+    GraphSignalPrewait,
     BlitLinearTotal,
     FillImage = BlitLinearTotal,
     BlitCopyImage,
@@ -497,6 +498,9 @@ class KernelBlitManager : public DmaBlitManager {
       device::Memory& memory,  //!< Memory contents to compare the 'value' against
       uint64_t value, size_t offset, size_t sizeBytes, uint64_t flags, uint64_t mask) const;
 
+  // Diagnostic bounded compute prewait; caller retains the original dependency.
+  bool graphSignalPrewait(uint64_t signal_handle, uint64_t ticks, uint64_t* record) const;
+
   //! Batch memory ops- Submits batch of streamWaits and streamWrite operations.
   virtual bool batchMemOps(const void* paramArray, size_t paramSize, uint32_t count) const;
 
@@ -585,6 +589,7 @@ static const char* BlitName[KernelBlitManager::BlitTotal] = {
     "__amd_rocclr_streamOpsWrite",    "__amd_rocclr_streamOpsWait",
     "__amd_rocclr_scheduler",         "__amd_rocclr_gwsInit",
     "__amd_rocclr_initHeap",          "__amd_rocclr_batchMemOp",
+    "__amd_rocclr_graphSignalPrewait",
     "__amd_rocclr_fillImage",         "__amd_rocclr_copyImage",
     "__amd_rocclr_copyImage1DA",      "__amd_rocclr_copyImageToBuffer",
     "__amd_rocclr_copyBufferToImage"};

@@ -172,6 +172,26 @@ const char* HipExtraSourceCode = BLIT_KERNELS(
       __amd_streamOpsWrite(ptrInt, ptrUlong, value);
     }
 
+    typedef struct { ulong handle; } graph_wait_signal_t;
+    extern long __ockl_hsa_signal_load(graph_wait_signal_t signal, int order);
+    __kernel void __amd_rocclr_graphSignalPrewait(ulong handle, ulong budget,
+                                                   __global ulong* record) {
+      graph_wait_signal_t signal = {handle};
+      ulong started = __builtin_amdgcn_s_memrealtime();
+      ulong outcome = 0;
+      long observed;
+      while ((observed = __ockl_hsa_signal_load(signal, 2)) > 0) {
+        if (__builtin_amdgcn_s_memrealtime() - started >= budget) { outcome = 1; break; }
+        __builtin_amdgcn_s_sleep(1);
+      }
+      if (record != 0) {
+        record[4] = started;
+        record[5] = __builtin_amdgcn_s_memrealtime();
+        record[6] = (ulong)observed;
+        record[7] = outcome;
+      }
+    }
+
     __kernel void __amd_rocclr_streamOpsWait(__global uint* ptrInt, __global ulong* ptrUlong,
                                              ulong value, ulong flags, ulong mask) {
       __amd_streamOpsWait(ptrInt, ptrUlong, value, flags, mask);
@@ -188,6 +208,26 @@ const char* HipExtraSourceCodeNoGWS = BLIT_KERNELS(
     __kernel void __amd_rocclr_streamOpsWrite(__global uint* ptrInt, __global ulong* ptrUlong,
                                               ulong value) {
       __amd_streamOpsWrite(ptrInt, ptrUlong, value);
+    }
+
+    typedef struct { ulong handle; } graph_wait_signal_t;
+    extern long __ockl_hsa_signal_load(graph_wait_signal_t signal, int order);
+    __kernel void __amd_rocclr_graphSignalPrewait(ulong handle, ulong budget,
+                                                   __global ulong* record) {
+      graph_wait_signal_t signal = {handle};
+      ulong started = __builtin_amdgcn_s_memrealtime();
+      ulong outcome = 0;
+      long observed;
+      while ((observed = __ockl_hsa_signal_load(signal, 2)) > 0) {
+        if (__builtin_amdgcn_s_memrealtime() - started >= budget) { outcome = 1; break; }
+        __builtin_amdgcn_s_sleep(1);
+      }
+      if (record != 0) {
+        record[4] = started;
+        record[5] = __builtin_amdgcn_s_memrealtime();
+        record[6] = (ulong)observed;
+        record[7] = outcome;
+      }
     }
 
     __kernel void __amd_rocclr_streamOpsWait(__global uint* ptrInt, __global ulong* ptrUlong,

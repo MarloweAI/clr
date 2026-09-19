@@ -383,7 +383,7 @@ class VirtualGPU : public device::VirtualDevice {
       uint32_t sharedMemBytes = 0,                         //!< Shared memory size
       amd::NDRangeKernelCommand* vcmd = nullptr,           //!< Original launch command
       hsa_kernel_dispatch_packet_t* aql_packet = nullptr,  //!< Scheduler launch
-      bool attach_signal = false);
+      bool attach_signal = false, bool graph_prewait = false);
   void submitNativeFn(amd::NativeFnCommand& cmd);
   void submitMarker(amd::Marker& cmd);
   void submitAccumulate(amd::AccumulateCommand& cmd);
@@ -498,9 +498,37 @@ class VirtualGPU : public device::VirtualDevice {
 
  private:
   //! Dispatches a barrier with blocking HSA signals
-  void dispatchNativeEventWait(hsa_signal_t signal);
+  bool dispatchNativeEventWait(hsa_signal_t signal);
   void dispatchNativeWaitRetirement(hsa_signal_t signal);
-  void dispatchBlockingWait();
+  struct GraphPrewaitCandidate {
+    hsa_signal_t signal;
+    uint64_t producer;
+    unsigned site;
+    const char* capability;
+  };
+  struct GraphPrewaitGroup {
+    GraphPrewaitCandidate entries[6];
+    unsigned count = 0;
+  };
+  void addGraphPrewaitCandidate(GraphPrewaitGroup& group, amd::Event* event,
+                                ProfilingSignal* signal, unsigned site) const;
+  void dispatchBlockingWait(const GraphPrewaitGroup* prewait = nullptr);
+  bool dispatchGraphSignalPrewait(hsa_signal_t signal, unsigned site);
+  void traceGraphPrewaitSummary();
+  struct GraphPrewaitCounts {
+    uint64_t selected = 0, ready = 0, pending = 0, capable = 0;
+    uint64_t native = 0, submitted = 0, failed = 0;
+  } graph_prewait_counts_[2];
+  uint64_t graph_prewait_last_reported_ = 0;
+  bool graph_prewait_active_ = false;
+  bool graph_prewait_external_mask_ = false;
+  bool graph_prewait_packet_ = false, graph_prewait_published_ = false;
+  uint64_t* graph_prewait_record_ = nullptr;
+  bool graph_prewait_record_pending_ = false;
+  uint64_t graph_prewait_generation_ = 0, graph_prewait_active_generation_ = 0;
+  void drainGraphPrewaitRecord();
+  uint64_t graph_prewait_signal_ = 0;
+  unsigned graph_prewait_site_ = 0;
 
   bool dispatchAqlPacket(hsa_kernel_dispatch_packet_t* packet, uint16_t header, uint16_t rest,
                          bool blocking = true, bool capturing = false,
@@ -518,7 +546,8 @@ class VirtualGPU : public device::VirtualDevice {
   //! Dispatches multiple AQL packets with a single doorbell ring
   template <typename AqlPacket> bool dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
                                                                    bool blocking, bool attach_signal = false,
-                                                                   const std::vector<std::string>* kernelNames = nullptr);
+                                                                   const std::vector<std::string>* kernelNames = nullptr,
+                                                                   bool tail_completion_only = false);
 
   bool dispatchCounterAqlPacket(hsa_ext_amd_aql_pm4_packet_t* packet, const uint32_t gfxVersion,
                                 bool blocking, const hsa_ven_amd_aqlprofile_1_00_pfn_t* extApi);
@@ -640,35 +669,36 @@ class VirtualGPU : public device::VirtualDevice {
   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
   ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
   bool native_wait_enabled_ = false;
-  // Require 256 actual unread kernel packets before adding a native prewait.
-  // Short dependencies and drained histories use ordinary AQL.
-  static constexpr uint64_t kNativeWaitMinDispatches = 256;
-  // Keep positions, not packet-span length: markers and other streams' packets
-  // never count as kernels. A fresh read index at/before the oldest retained
-  // position proves that all 256 of this stream's kernels remain unread.
-  uint64_t native_kernel_positions_[kNativeWaitMinDispatches]{};
+  // Admission is a cost heuristic; keep the history storage independent of it.
+  static constexpr uint64_t kNativeWaitMinDispatches = 24;
+  static constexpr uint64_t kNativeWaitHistoryCapacity = 256;
+  // Record actual kernel positions, not packet spans that include other work.
+  uint64_t native_kernel_positions_[kNativeWaitHistoryCapacity]{};
   uint64_t native_history_queue_id_ = std::numeric_limits<uint64_t>::max();
   unsigned native_history_head_ = 0;
   unsigned native_history_count_ = 0;
   uint64_t NativeThresholdIndex() const {
     if (gpu_queue_ == nullptr || native_history_queue_id_ != gpu_queue_->id ||
-        native_history_count_ != kNativeWaitMinDispatches) {
+        native_history_count_ < kNativeWaitMinDispatches) {
       return std::numeric_limits<uint64_t>::max();
     }
-    return native_kernel_positions_[native_history_head_];
+    return native_kernel_positions_[
+        (native_history_head_ + kNativeWaitHistoryCapacity - kNativeWaitMinDispatches) %
+        kNativeWaitHistoryCapacity];
   }
   void BreakNativeKernelHistory() {
+    if (graph_prewait_active_) return;
     native_history_head_ = native_history_count_ = 0;
   }
   void NoteNativeKernelPacket(uint64_t index) {
-    if (!native_wait_enabled_) return;
+    if (!native_wait_enabled_ || graph_prewait_active_) return;
     if (native_history_queue_id_ != gpu_queue_->id) {
       native_history_queue_id_ = gpu_queue_->id;
       native_history_head_ = native_history_count_ = 0;
     }
     native_kernel_positions_[native_history_head_] = index;
-    native_history_head_ = (native_history_head_ + 1) % kNativeWaitMinDispatches;
-    if (native_history_count_ < kNativeWaitMinDispatches) ++native_history_count_;
+    native_history_head_ = (native_history_head_ + 1) % kNativeWaitHistoryCapacity;
+    if (native_history_count_ < kNativeWaitHistoryCapacity) ++native_history_count_;
   }
   uint64_t native_wait_count_ = 0;
   uint64_t native_irq_wait_count_ = 0;

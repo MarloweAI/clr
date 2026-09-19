@@ -2579,6 +2579,25 @@ bool KernelBlitManager::streamOpsWait(device::Memory& memory, uint64_t value, si
 }
 
 // ================================================================================================
+bool KernelBlitManager::graphSignalPrewait(uint64_t signal_handle, uint64_t ticks,
+                                           uint64_t* record) const {
+  amd::ScopedLock lock(lockXferOps_);
+  auto* kernel = kernels_[GraphSignalPrewait];
+  if (kernel == nullptr) return false;
+  setArgument(kernel, 0, sizeof(signal_handle), &signal_handle);
+  setArgument(kernel, 1, sizeof(ticks), &ticks);
+  setArgument(kernel, 2, sizeof(record), record, 0, nullptr, true);
+  size_t offset[1] = {0}, global[1] = {1}, local[1] = {1};
+  amd::NDRangeContainer range(1, offset, global, local);
+  // captureArguments is shared mutable storage. submitKernelInternal copies it
+  // into a fresh non-captured kernarg while this lock remains held.
+  address args = captureArguments(kernel);
+  bool result = gpu().submitKernelInternal(range, *kernel, args, nullptr, 0,
+                                             nullptr, nullptr, false, true);
+  releaseArguments(args);
+  return result;
+}
+
 bool KernelBlitManager::batchMemOps(const void* paramArray, size_t paramSize,
                                     uint32_t count) const {
   amd::ScopedLock k(lockXferOps_);

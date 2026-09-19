@@ -151,6 +151,32 @@ release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
         "Trace native event counts at queue destruction")                     \
 release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
         "Experimental gfx950 native event pre-wait")                          \
+release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
+        "Place longer graph segments first without changing enqueue order")  \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SPARE, true,                               \
+        "Diagnostic control for the existing optional graph spare stream")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE, false,                    \
+        "Restrict optional spare to qualified kernel or placement graphs")   \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE, false,                  \
+        "Diagnostic: place eligible flat kernel graph on its launch stream") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE, false,                    \
+        "Diagnostic: one accumulator for a coalesced flat kernel graph")      \
+release(bool, GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE, false,                      \
+        "Diagnostic: share captured-kernel retirement within logical lanes") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL, false,                                          \
+        "Diagnostic: omit success-only final side waits already covered by explicit graph ancestry") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
+        "Diagnostic: import graph dependencies in the next captured batch")  \
+release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
+        "Diagnostic: fail a final-kernel batch after a published prefix.")    \
+release(bool, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE, false,                     \
+        "Diagnostic: retire an ordered captured region on its final kernel.") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL, false,                        \
+        "Diagnostic: join graph side tails in the final completion marker")  \
+release(uint, GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER, 0,                      \
+        "Diagnostic: fail after this many published lane-retirement segments") \
+release(bool, GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE, false,                        \
+        "Untimed graph stream selection and actual queue assignment receipts") \
 release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
          "The maximum number of HW queues allocated per device")              \
 release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \
@@ -233,6 +259,14 @@ release(bool, DEBUG_CLR_BLIT_KERNARG_OPT, false,                              \
         "Enable blit kernel arguments optimization")                          \
 release(bool, ROC_SKIP_KERNEL_ARG_COPY, false,                                \
         "If true, then runtime can skip kernel arg copy")                     \
+release(uint, GPU_GRAPH_DIAGNOSTIC_PREWAIT_SITES, 0,                         \
+        "Diagnostic compute prewait sites: 1 entry, 2 internal")              \
+release(uint, GPU_GRAPH_DIAGNOSTIC_PREWAIT_US, 500,                          \
+        "Bounded compute prewait budget in microseconds; 0 expires")          \
+release(uint, GPU_GRAPH_DIAGNOSTIC_PREWAIT_TRACE, 0,                         \
+        "Untimed compute prewait evidence: 1 detailed, 2 sparse")              \
+release(bool, GPU_GRAPH_DIAGNOSTIC_PREWAIT_FAIL, false,                     \
+        "Untimed helper-construction fallback injection")                    \
 release(bool, GPU_STREAMOPS_CP_WAIT, false,                                   \
         "Force the stream wait memory operation to wait on CP.")              \
 release(bool, HIPRTC_USE_RUNTIME_UNBUNDLER, false,                            \
