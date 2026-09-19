@@ -1,0 +1,12 @@
+{
+  "runtime/hsa-runtime/core/util/atomic_helpers.h": "5f7e060ea7f1db0f4310b43ed62eb9be5df20dd72fe546401ca82c408a761183",
+  "runtime/hsa-runtime/core/runtime/default_signal.cpp": "8bc963899a366b4de8745c88939b9f9ab2d779cecffe42f4171a8e6a796a3cd2",
+  "runtime/hsa-runtime/core/runtime/amd_aql_queue.cpp": "291f2521e2a4758e852ed20c578aca79e379d1effe4dfd83c62e11347eef2b14",
+  "runtime/hsa-runtime/core/runtime/amd_gpu_agent.cpp": "c39d5f922e855ce57d3c1903beef325e6004431c2ee66ae000aac72a0e5999da",
+  "runtime/hsa-runtime/core/runtime/amd_memory_region.cpp": "37e11dd281156b80972c25cea9bd924beb0da1a2e6a2b55be0117955ea5249d3",
+  "runtime/hsa-runtime/core/runtime/hsa_ext_amd.cpp": "10ae2238897a8e5fcb0fceff2521f1548c4eed20d0e5f74b1952f52cb3f576b5",
+  "runtime/hsa-runtime/core/driver/kfd/amd_kfd_driver.cpp": "c6f961251ebc0ceb3da5107964fa34bb5dacf0d3973a0e179fcb06cf5ca98cb3",
+  "runtime/hsa-runtime/core/runtime/hsa.cpp": "35612e02238e772849a038cdb2c6a8ce269ea3867d3a7218464fcdbbc208d267",
+  "runtime/hsa-runtime/core/inc/signal.h": "a8e24dd7a1d3e8a2c6699874ef177ea5f38c6d865d5d8ed9e21b4fb13d527d0c",
+  "runtime/hsa-runtime/inc/hsa_ext_amd.h": "a59a80700f9fa697f6067b6f5442aca5bdc494eaf20a2da639fd46038a7462b6"
+}

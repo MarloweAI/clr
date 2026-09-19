@@ -1,0 +1,53 @@
+{
+  "lib": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-local-tokens-20260919/lib-v3",
+  "controls": {
+    "AMD_DIRECT_DISPATCH": "1",
+    "AMD_LOG_LEVEL": "0",
+    "AMD_LOG_MASK": "0",
+    "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+    "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+    "GPU_NATIVE_EVENT_TRACE": "0",
+    "GPU_STREAMOPS_CP_WAIT": "0",
+    "GPU_MAX_HW_QUEUES": "4",
+    "GPU_NATIVE_EVENT_WAIT": "1",
+    "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+    "HIP_VISIBLE_DEVICES": "0",
+    "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+    "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+    "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+    "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+    "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS": "1",
+    "GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST": "0"
+  },
+  "libraries": {
+    "libamdhip64": "69f3df4efac18f3429ddc5951bdeb2d0dd821f8f1489bb78fb90e2f6dc8da254",
+    "libhsa-runtime64": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12"
+  },
+  "external_sources": {
+    "/sgl-workspace/aiter/aiter/tuned_gemm.py": "8408a8914c76608d153c132d087e4cd6a614371bc71815cb98045f904b14d3a2",
+    "/sgl-workspace/aiter/aiter/ops/flydsl/gemm_kernels.py": "32cd04fe42d188e02c28c1748e11c9a0ca009e6346aa8c38b5640f4b79fa205d"
+  },
+  "groups": [
+    1,
+    50
+  ],
+  "units": 200,
+  "rounds": 4,
+  "trials": 8,
+  "data_sha256": {
+    "qx": "a1335a277b254048cf5bc6b43f40ce807455c99febf21480a1ee0a2443f7d5e5",
+    "qw": "25a8cf031ba56c0612ffea1fe69c720dfe34ad722ef2920c05f1abff7586714f",
+    "kx": "89d78f55ea1dc2f9b6f1810cb81972e9eec634ccd353c62ea2fe1ce70e5edf4f",
+    "kw": "c1a5aedbb8c10c511fae88161fb72dcd3c3384183641e34ade070c521621bda3"
+  },
+  "hypothesis": "Same-object API lookup versus cached aligned value-pointer reset on private host/local GPU-only signals, exact packet topology/bytes. No CPU signal RMW or live reset; all costs included. Modes3/4 reuse modes1/2 storage."
+}

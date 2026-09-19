@@ -1,0 +1,576 @@
+{
+  "passed": true,
+  "job": "55349",
+  "timing_rows": 448,
+  "correctness_rows": 3570,
+  "groups": {
+    "1": {
+      "us_per_pair": {
+        "hip": {
+          "gpu_us": 16.689843833446503,
+          "host_us": 16.728291249999998,
+          "submit_us": 3.3296
+        },
+        "m0p0": {
+          "latency_us": 26.119954999999997,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.023875,
+          "publish_us": 0.0185625,
+          "total_us": 26.1620925
+        },
+        "m1p0": {
+          "latency_us": 26.205132499999998,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.0276375,
+          "publish_us": 0.020125000000000004,
+          "total_us": 26.253245000000003
+        },
+        "m2p0": {
+          "latency_us": 17.36469125,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 7.1356649999999995,
+          "publish_us": 0.019424999999999998,
+          "total_us": 24.51204375
+        },
+        "m0p1": {
+          "latency_us": 26.79128,
+          "dispatch_envelope_us": 26.69412,
+          "prepare_us": 0.023787500000000003,
+          "publish_us": 0.019575000000000002,
+          "total_us": 26.839655
+        },
+        "m1p1": {
+          "latency_us": 26.8647575,
+          "dispatch_envelope_us": 26.751569999999997,
+          "prepare_us": 0.0273125,
+          "publish_us": 0.0205875,
+          "total_us": 26.912732500000004
+        },
+        "m2p1": {
+          "latency_us": 17.2776275,
+          "dispatch_envelope_us": 17.183733750000002,
+          "prepare_us": 7.133325,
+          "publish_us": 0.01925,
+          "total_us": 24.445404999999997
+        }
+      },
+      "round_medians": {
+        "hip": {
+          "0": {
+            "gpu_us": 16.69544279575348,
+            "host_us": 16.732655,
+            "submit_us": 3.32695
+          },
+          "1": {
+            "gpu_us": 16.709242463111877,
+            "host_us": 16.748427500000002,
+            "submit_us": 3.32105
+          },
+          "2": {
+            "gpu_us": 16.646440029144287,
+            "host_us": 16.68568,
+            "submit_us": 3.33225
+          },
+          "3": {
+            "gpu_us": 16.684244871139526,
+            "host_us": 16.7239275,
+            "submit_us": 3.4066999999999994
+          }
+        },
+        "m0p0": {
+          "0": {
+            "latency_us": 26.1726825,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.023799999999999998,
+            "publish_us": 0.017200000000000003,
+            "total_us": 26.215507500000005
+          },
+          "1": {
+            "latency_us": 26.10733,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.02365,
+            "publish_us": 0.019625,
+            "total_us": 26.150055000000002
+          },
+          "2": {
+            "latency_us": 26.0776575,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.02395,
+            "publish_us": 0.0192,
+            "total_us": 26.128832499999998
+          },
+          "3": {
+            "latency_us": 26.132579999999997,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.023975,
+            "publish_us": 0.017925,
+            "total_us": 26.17413
+          }
+        },
+        "m1p0": {
+          "0": {
+            "latency_us": 26.128132500000003,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.027725,
+            "publish_us": 0.01975,
+            "total_us": 26.176407499999996
+          },
+          "1": {
+            "latency_us": 26.210207499999996,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.027525,
+            "publish_us": 0.02025,
+            "total_us": 26.257782500000005
+          },
+          "2": {
+            "latency_us": 26.200057500000003,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.027549999999999998,
+            "publish_us": 0.020175000000000002,
+            "total_us": 26.248707500000002
+          },
+          "3": {
+            "latency_us": 26.2286825,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.027825,
+            "publish_us": 0.020075000000000003,
+            "total_us": 26.278857500000004
+          }
+        },
+        "m2p0": {
+          "0": {
+            "latency_us": 17.3358025,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 7.1304050000000005,
+            "publish_us": 0.018625,
+            "total_us": 24.4803075
+          },
+          "1": {
+            "latency_us": 17.344002500000002,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 7.1298025,
+            "publish_us": 0.0192,
+            "total_us": 24.48588
+          },
+          "2": {
+            "latency_us": 17.38538,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 7.140924999999999,
+            "publish_us": 0.019649999999999997,
+            "total_us": 24.5382075
+          },
+          "3": {
+            "latency_us": 17.4011,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 7.197155,
+            "publish_us": 0.019675,
+            "total_us": 24.6376825
+          }
+        },
+        "m0p1": {
+          "0": {
+            "latency_us": 26.811104999999998,
+            "dispatch_envelope_us": 26.71777,
+            "prepare_us": 0.023624999999999997,
+            "publish_us": 0.019875,
+            "total_us": 26.854905
+          },
+          "1": {
+            "latency_us": 26.7578075,
+            "dispatch_envelope_us": 26.665565,
+            "prepare_us": 0.02365,
+            "publish_us": 0.0194,
+            "total_us": 26.8018325
+          },
+          "2": {
+            "latency_us": 26.771455,
+            "dispatch_envelope_us": 26.67047,
+            "prepare_us": 0.023925000000000002,
+            "publish_us": 0.01975,
+            "total_us": 26.824405
+          },
+          "3": {
+            "latency_us": 26.869979999999995,
+            "dispatch_envelope_us": 26.773872499999996,
+            "prepare_us": 0.024325,
+            "publish_us": 0.0193,
+            "total_us": 26.914004999999996
+          }
+        },
+        "m1p1": {
+          "0": {
+            "latency_us": 26.81928,
+            "dispatch_envelope_us": 26.712062500000002,
+            "prepare_us": 0.026875,
+            "publish_us": 0.020649999999999998,
+            "total_us": 26.86843
+          },
+          "1": {
+            "latency_us": 26.833032499999998,
+            "dispatch_envelope_us": 26.725567499999997,
+            "prepare_us": 0.0269,
+            "publish_us": 0.0209,
+            "total_us": 26.880057500000003
+          },
+          "2": {
+            "latency_us": 26.90071,
+            "dispatch_envelope_us": 26.787470000000003,
+            "prepare_us": 0.028025,
+            "publish_us": 0.020525,
+            "total_us": 26.94931
+          },
+          "3": {
+            "latency_us": 26.8964825,
+            "dispatch_envelope_us": 26.777572499999998,
+            "prepare_us": 0.027725,
+            "publish_us": 0.017075,
+            "total_us": 26.9454075
+          }
+        },
+        "m2p1": {
+          "0": {
+            "latency_us": 17.2701525,
+            "dispatch_envelope_us": 17.1769075,
+            "prepare_us": 7.1262525000000005,
+            "publish_us": 0.019025,
+            "total_us": 24.41163
+          },
+          "1": {
+            "latency_us": 17.2658275,
+            "dispatch_envelope_us": 17.1719575,
+            "prepare_us": 7.128325,
+            "publish_us": 0.019475,
+            "total_us": 24.409480000000002
+          },
+          "2": {
+            "latency_us": 17.317729999999997,
+            "dispatch_envelope_us": 17.224059999999998,
+            "prepare_us": 7.138325,
+            "publish_us": 0.019675,
+            "total_us": 24.479179999999996
+          },
+          "3": {
+            "latency_us": 17.2851025,
+            "dispatch_envelope_us": 17.19056,
+            "prepare_us": 7.1735050000000005,
+            "publish_us": 0.017,
+            "total_us": 24.511155
+          }
+        }
+      },
+      "packet_counts": {
+        "m0q0": 600,
+        "m0q1": 400,
+        "m1q0": 600,
+        "m1q1": 400,
+        "m2q0": 600,
+        "m2q1": 400
+      },
+      "observed_wraps": 47,
+      "profile_clock_gate_pass": true,
+      "min_dependency_gap_us": 8.44,
+      "profile_gaps": {
+        "m0p1": {
+          "first_resume_us": 13.681,
+          "both_resume_us": 22.481,
+          "host_minus_envelope_us": 17.98199999999997
+        },
+        "m1p1": {
+          "first_resume_us": 13.8005,
+          "both_resume_us": 22.4805,
+          "host_minus_envelope_us": 22.343500000000404
+        },
+        "m2p1": {
+          "first_resume_us": 8.841,
+          "both_resume_us": 13.12,
+          "host_minus_envelope_us": 18.98850000000016
+        }
+      }
+    },
+    "50": {
+      "us_per_pair": {
+        "hip": {
+          "gpu_us": 7.480192482471466,
+          "host_us": 7.51813875,
+          "submit_us": 1.188475
+        },
+        "m0p0": {
+          "latency_us": 9.95333875,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.005787499999999999,
+          "publish_us": 0.014899999999999998,
+          "total_us": 9.97303875
+        },
+        "m1p0": {
+          "latency_us": 9.92086375,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.0072625,
+          "publish_us": 0.01725,
+          "total_us": 9.94616375
+        },
+        "m2p0": {
+          "latency_us": 7.348990000000001,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 4.7483249999999995,
+          "publish_us": 0.015362500000000001,
+          "total_us": 12.122051250000002
+        },
+        "m0p1": {
+          "latency_us": 9.9484025,
+          "dispatch_envelope_us": 9.863769999999999,
+          "prepare_us": 0.0058125,
+          "publish_us": 0.015612499999999998,
+          "total_us": 9.96854
+        },
+        "m1p1": {
+          "latency_us": 9.85552625,
+          "dispatch_envelope_us": 9.76936875,
+          "prepare_us": 0.006987499999999999,
+          "publish_us": 0.017275,
+          "total_us": 9.88055125
+        },
+        "m2p1": {
+          "latency_us": 7.291276249999999,
+          "dispatch_envelope_us": 7.197255,
+          "prepare_us": 4.7909,
+          "publish_us": 0.01595,
+          "total_us": 12.10486375
+        }
+      },
+      "round_medians": {
+        "hip": {
+          "0": {
+            "gpu_us": 7.480539977550507,
+            "host_us": 7.518775000000001,
+            "submit_us": 1.213175
+          },
+          "1": {
+            "gpu_us": 7.485044896602631,
+            "host_us": 7.522627500000001,
+            "submit_us": 1.163775
+          },
+          "2": {
+            "gpu_us": 7.4725425243377686,
+            "host_us": 7.5091275,
+            "submit_us": 1.14545
+          },
+          "3": {
+            "gpu_us": 7.4798449873924255,
+            "host_us": 7.517502500000001,
+            "submit_us": 1.23765
+          }
+        },
+        "m0p0": {
+          "0": {
+            "latency_us": 9.9398275,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.005774999999999999,
+            "publish_us": 0.014049999999999998,
+            "total_us": 9.9590275
+          },
+          "1": {
+            "latency_us": 9.9875525,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0058,
+            "publish_us": 0.01725,
+            "total_us": 10.0108525
+          },
+          "2": {
+            "latency_us": 9.966849999999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.005774999999999999,
+            "publish_us": 0.014449999999999998,
+            "total_us": 9.98705
+          },
+          "3": {
+            "latency_us": 9.9368525,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0058,
+            "publish_us": 0.015349999999999999,
+            "total_us": 9.9583775
+          }
+        },
+        "m1p0": {
+          "0": {
+            "latency_us": 9.919175000000001,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.007124999999999999,
+            "publish_us": 0.016575,
+            "total_us": 9.942425
+          },
+          "1": {
+            "latency_us": 9.9088775,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.006999999999999999,
+            "publish_us": 0.0173,
+            "total_us": 9.9336525
+          },
+          "2": {
+            "latency_us": 9.995027499999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0074,
+            "publish_us": 0.020499999999999997,
+            "total_us": 10.024127499999999
+          },
+          "3": {
+            "latency_us": 9.9225525,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.007424999999999999,
+            "publish_us": 0.0172,
+            "total_us": 9.9499025
+          }
+        },
+        "m2p0": {
+          "0": {
+            "latency_us": 7.3495525,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 4.7688,
+            "publish_us": 0.015125000000000001,
+            "total_us": 12.141102500000002
+          },
+          "1": {
+            "latency_us": 7.349327499999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 4.814525,
+            "publish_us": 0.015600000000000001,
+            "total_us": 12.163902499999999
+          },
+          "2": {
+            "latency_us": 7.348652500000001,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 4.725775,
+            "publish_us": 0.016825,
+            "total_us": 12.100405
+          },
+          "3": {
+            "latency_us": 7.341875,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 4.72785,
+            "publish_us": 0.014775,
+            "total_us": 12.103
+          }
+        },
+        "m0p1": {
+          "0": {
+            "latency_us": 9.9343775,
+            "dispatch_envelope_us": 9.85172,
+            "prepare_us": 0.0058,
+            "publish_us": 0.015274999999999999,
+            "total_us": 9.9549025
+          },
+          "1": {
+            "latency_us": 9.9624275,
+            "dispatch_envelope_us": 9.87582,
+            "prepare_us": 0.005825,
+            "publish_us": 0.014925,
+            "total_us": 9.9821775
+          },
+          "2": {
+            "latency_us": 10.01575,
+            "dispatch_envelope_us": 9.9352225,
+            "prepare_us": 0.005825,
+            "publish_us": 0.01855,
+            "total_us": 10.0391525
+          },
+          "3": {
+            "latency_us": 9.93108,
+            "dispatch_envelope_us": 9.84716,
+            "prepare_us": 0.0058,
+            "publish_us": 0.01595,
+            "total_us": 9.952555
+          }
+        },
+        "m1p1": {
+          "0": {
+            "latency_us": 9.851600000000001,
+            "dispatch_envelope_us": 9.7689175,
+            "prepare_us": 0.0069,
+            "publish_us": 0.0172,
+            "total_us": 9.8763
+          },
+          "1": {
+            "latency_us": 9.8789,
+            "dispatch_envelope_us": 9.7882175,
+            "prepare_us": 0.007024999999999999,
+            "publish_us": 0.017225,
+            "total_us": 9.90265
+          },
+          "2": {
+            "latency_us": 9.856675000000001,
+            "dispatch_envelope_us": 9.768515,
+            "prepare_us": 0.00695,
+            "publish_us": 0.017325,
+            "total_us": 9.881275
+          },
+          "3": {
+            "latency_us": 9.8543775,
+            "dispatch_envelope_us": 9.76982,
+            "prepare_us": 0.0072,
+            "publish_us": 0.01775,
+            "total_us": 9.8798275
+          }
+        },
+        "m2p1": {
+          "0": {
+            "latency_us": 7.29355,
+            "dispatch_envelope_us": 7.1998325,
+            "prepare_us": 4.8176749999999995,
+            "publish_us": 0.01535,
+            "total_us": 12.131975
+          },
+          "1": {
+            "latency_us": 7.289002499999999,
+            "dispatch_envelope_us": 7.194235,
+            "prepare_us": 4.76495,
+            "publish_us": 0.0163,
+            "total_us": 12.088899999999999
+          },
+          "2": {
+            "latency_us": 7.288975000000001,
+            "dispatch_envelope_us": 7.195332499999999,
+            "prepare_us": 4.81685,
+            "publish_us": 0.0159,
+            "total_us": 12.1208275
+          },
+          "3": {
+            "latency_us": 7.2966750000000005,
+            "dispatch_envelope_us": 7.199177500000001,
+            "prepare_us": 4.72133,
+            "publish_us": 0.016,
+            "total_us": 12.034455000000001
+          }
+        }
+      },
+      "packet_counts": {
+        "m0q0": 404,
+        "m0q1": 400,
+        "m1q0": 404,
+        "m1q1": 400,
+        "m2q0": 404,
+        "m2q1": 400
+      },
+      "observed_wraps": 38,
+      "profile_clock_gate_pass": true,
+      "min_dependency_gap_us": 2.0,
+      "profile_gaps": {
+        "m0p1": {
+          "first_resume_us": 5.0,
+          "both_resume_us": 5.16,
+          "host_minus_envelope_us": 16.99599999999998
+        },
+        "m1p1": {
+          "first_resume_us": 4.921,
+          "both_resume_us": 5.081,
+          "host_minus_envelope_us": 17.39149999999995
+        },
+        "m2p1": {
+          "first_resume_us": 2.4,
+          "both_resume_us": 2.56,
+          "host_minus_envelope_us": 19.239000000000033
+        }
+      }
+    }
+  },
+  "manifest_sha256": "8ab2d5374a75eb26319e9a1e27235882637d2b3fd1ba9b75f9e7cb8fab89a29c",
+  "qualified": false
+}
