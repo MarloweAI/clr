@@ -1,0 +1,28 @@
+{
+  "cases": {
+    "serial-g1": {
+      "capture": "warm",
+      "operation": "serial",
+      "group": 1
+    },
+    "serial-g50": {
+      "capture": "warm",
+      "operation": "serial",
+      "group": 50
+    },
+    "events-g1": {
+      "capture": "warm",
+      "operation": "events",
+      "group": 1
+    },
+    "events-g50": {
+      "capture": "warm",
+      "operation": "events",
+      "group": 50
+    }
+  },
+  "external_sources": {
+    "/sgl-workspace/aiter/aiter/tuned_gemm.py": "8408a8914c76608d153c132d087e4cd6a614371bc71815cb98045f904b14d3a2",
+    "/sgl-workspace/aiter/aiter/ops/flydsl/gemm_kernels.py": "32cd04fe42d188e02c28c1748e11c9a0ca009e6346aa8c38b5640f4b79fa205d"
+  }
+}

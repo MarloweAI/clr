@@ -44,3 +44,6 @@ install/
 # Editor temp files
 *.swp
 *.swo
+
+# Python benchmark and package helpers
+__pycache__/
