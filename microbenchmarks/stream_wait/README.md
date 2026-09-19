@@ -36,6 +36,8 @@ python microbenchmarks/stream_wait/run.py \
   --output /absolute/path/to/new-results
 ```
 
+`--reference-lib /path/to/recovered/lib --rounds 4` adds the exact recovered
+runtime as an enabled fourth arm, to check rebuilt-byte preservation.
 `--cases` selects suites explicitly. `--cases hassan` does not require `--bin`.
 The runner fixes both optional runtime flags to 0/0 or 1/1, uses queue cap four,
 keeps runtime traces off, verifies actual mapped libraries, and records source,

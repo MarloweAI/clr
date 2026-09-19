@@ -9,19 +9,21 @@ def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def write(p,v):p.write_text(json.dumps(v,indent=2)+'\n')
 def env_for(mode,lib):
  env={k:v for k,v in os.environ.items() if not k.startswith(('GPU_','DEBUG_HIP_','AMD_LOG_','ROC_AQL_','LLM_','AFJ_','ASC_','MARLOWE_RUNTIME_')) and k not in ('LD_LIBRARY_PATH','LD_PRELOAD','LD_DEBUG','ROCP_TOOL_LIB','ROCPROFILER_TOOL_LIBRARIES')}
- controls={'AMD_DIRECT_DISPATCH':'1','GPU_NATIVE_EVENT_WAIT':str(int(mode=='on')),'GPU_GRAPH_NODE_COUNT_PLACEMENT':str(int(mode=='on')),'GPU_NATIVE_EVENT_TRACE':'0','GPU_MAX_HW_QUEUES':'4','GPU_STREAMOPS_CP_WAIT':'0'}
+ controls={'AMD_DIRECT_DISPATCH':'1','GPU_NATIVE_EVENT_WAIT':str(int(mode in ('on','reference'))),'GPU_GRAPH_NODE_COUNT_PLACEMENT':str(int(mode in ('on','reference'))),'GPU_NATIVE_EVENT_TRACE':'0','GPU_MAX_HW_QUEUES':'4','GPU_STREAMOPS_CP_WAIT':'0'}
  env.update(controls,LD_LIBRARY_PATH=str(lib)+':/opt/rocm/lib',LD_PRELOAD='libamdhip64.so:libhsa-runtime64.so',LLM_RUNTIME_MODE=mode,AFJ_RUNTIME_MODE=mode,ASC_RUNTIME_MODE=mode)
  return env,controls
 
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  p.add_argument('--candidate-lib',type=Path,required=True);p.add_argument('--stock-lib',type=Path,default=Path('/opt/rocm/lib'))
- p.add_argument('--bin',type=Path);p.add_argument('--output',type=Path,required=True)
+ p.add_argument('--reference-lib',type=Path,help='Optional exact recovered library control, with both policies enabled');p.add_argument('--bin',type=Path);p.add_argument('--output',type=Path,required=True)
  p.add_argument('--cases',nargs='+',choices=CASES,default=list(CASES));p.add_argument('--rounds',type=int,default=3)
  a=p.parse_args();assert a.rounds>=3 and os.environ.get('SLURM_JOB_ID'),'Use >=3 fresh-process rounds inside a one-GPU allocation'
  if any(c!='hassan' for c in a.cases):assert a.bin is not None
  a.output=a.output.resolve();a.output.mkdir(exist_ok=False);refs=a.output/'references';refs.mkdir()
  libs={'stock':a.stock_lib.resolve(),'off':a.candidate_lib.resolve(),'on':a.candidate_lib.resolve()}
+ if a.reference_lib:libs['reference']=a.reference_lib.resolve()
+ assert a.rounds>=len(libs),'Use at least one complete runtime-order rotation'
  policy={mode:dict(lib=str(lib),libraries={n.removesuffix('.so'):sha(lib/n) for n in LIBS},controls=env_for(mode,lib)[1]) for mode,lib in libs.items()}
  source_hashes={str(f.relative_to(ROOT)):sha(f) for f in ROOT.rglob('*') if f.is_file() and '__pycache__' not in str(f)}
  manifest={'job':os.environ['SLURM_JOB_ID'],'node':os.environ.get('SLURMD_NODENAME'),'policy':policy,'sources':source_hashes,'rounds':a.rounds,'cases':a.cases,'runs':[],'complete':False}
@@ -30,9 +32,9 @@ def main():
  save()
  hs=json.loads((ROOT/'hassan/workload.json').read_text())|{'modes':policy,'sources':{f.name:sha(f) for f in (ROOT/'hassan').iterdir() if f.is_file()}}
  write(a.output/'hassan-spec.json',hs)
- modes=('stock','off','on');coverage={};data=None
+ modes=tuple(libs);coverage={};data=None
  for round_id in range(a.rounds):
-  for mode in modes[round_id%3:]+modes[:round_id%3]:
+  for mode in modes[round_id%len(modes):]+modes[:round_id%len(modes)]:
    for case in a.cases:
     subcases=list(hs['cases']) if case=='hassan' else [case]
     for subcase in subcases:
