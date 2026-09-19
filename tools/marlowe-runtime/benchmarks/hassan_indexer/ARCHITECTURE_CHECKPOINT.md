@@ -34,7 +34,7 @@ The unresolved interval can include producer release/cache work and completion p
 
 ## Next evidence required
 
-Before another GPU performance variation, identify an observation that separates those boundaries. The next local work is read-only: inspect the installed, version-specific tracing capabilities and pinned ROCr/KFD/firmware interfaces, then write a measurement contract specifying the boundary observed, clock domain, resolution, and a control for instrumentation overhead.
+Before another GPU performance variation, identify an observation that separates those boundaries. The completed [source/API observability review](OBSERVABILITY.md) finds no exposed CP barrier-recognition event in the inspected public tracing interfaces; dispatch-level thread tracing also enables serialization. It records the distinct CPU/HSA clock domains and a calibration-first contract for observing actual completion values. Clock-only validation must establish adequate correlation uncertainty before a new Q/K observation can be interpreted. No new GPU experiment or runtime change is included in that review.
 
 Useful evidence would timestamp completion-signal visibility, barrier wakeup or queue eligibility, and dispatch admission. A tool that only repeats the existing dispatch start/end trace adds no information. Do not insert unreviewed vendor packets or assume clocks on different XCDs are directly comparable.
 

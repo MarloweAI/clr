@@ -14,7 +14,7 @@ Latest checkpoint: there is still no qualified runtime delivering the requested 
 | [CPU-ready publication](CPU_READY_RESULTS.md) |12.169 vs9.638us/pair with matched CPU observer | Retained-barrier scheduler rejected |
 | [Satisfied-barrier omission](READY_OMIT_RESULTS.md) | Scheduler −19.10%, but10.294 vs9.642us/pair prepublished | CPU-readiness architecture closed |
 
-The [architecture checkpoint](ARCHITECTURE_CHECKPOINT.md) records the remaining device-side measurement boundary and the evidence needed before another runtime design. The [earlier same-queue design](NEXT_SAME_QUEUE_PARALLEL.md) is closed. None of these diagnostic outcomes is a new production-qualified runtime.
+The [architecture checkpoint](ARCHITECTURE_CHECKPOINT.md) records the remaining device-side measurement boundary and the evidence needed before another runtime design. The [polling evidence and observability review](OBSERVABILITY.md) separates long-producer interference from short-join latency and records a clock-calibrated observation contract; no new runtime or GPU result is claimed. The [earlier same-queue design](NEXT_SAME_QUEUE_PARALLEL.md) is closed. None of these diagnostic outcomes is a new production-qualified runtime.
 
 Single-GPU microbenchmark extracted from [Hassan's reproducer](https://github.com/MarloweAI/native-runtime-four-arm-reproducer/tree/b8a96bb4d842f628142e417ebb6753d4492bcaff).
 It reuses the exact 91-line scheduler and existing AITER/FlyDSL GEMMs. No GPU compute kernel is modified.

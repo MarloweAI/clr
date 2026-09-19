@@ -1,0 +1,19 @@
+{
+  "source_job": 54925,
+  "immutable_inputs_verified": {
+    "readiness.json": "286e2580af4188feaebb79a8f917f9ec294693815b7f6a2dd7b02496daa9caa6",
+    "dispatch-times.json": "25cd5705c8d6c14e18240639b9d08091a4acc24b6d4be9865fc03e7b6f034577",
+    "timings.json": "254ff13f40b68a5becb1b5d6373e52c2491e68d09cc15e1e6a135c797b37b06a"
+  },
+  "example": {
+    "round": 0,
+    "cell": "m1p1",
+    "trial": 0,
+    "layer": 1,
+    "cpu_observed_raw_ns": 1452468315480253,
+    "preceding_dispatch_end_hsa_ticks": 1452472455125903,
+    "comparison": "different clock domains; not a latency measurement"
+  },
+  "new_gpu_job": null,
+  "runtime_changes": false
+}
