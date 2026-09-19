@@ -1,10 +1,12 @@
-# Hassan Q/K architecture checkpoint after job 54925
+# Hassan Q/K architecture checkpoint after job 55065
 
 The goal remains a substantial speedup from true parallel execution of the original Q/K workload, followed by regression checks on the other microbenchmarks. It is not achieved. Changing kernels or shapes, serializing logical streams, or weakening dependencies would not meet that goal. There is no newly qualified runtime and no full-model work is planned.
 
 Application transparency is a requirement: the existing application, HIP/PyTorch stream/event calls and captured graphs must run unchanged. Graph splitting and explicit application polling are diagnostic controls, not deployment proposals or qualification wins. The runtime may improve its internal packet lowering and scheduling while preserving the original dependency and memory-ordering semantics. A candidate must deliver real overlap and lower total time on the unchanged workload.
 
-The best fully joined direct replay is about 9.64 µs/pair. Historical serial execution is about 8.75–8.87 µs/pair under its recorded HIP protocol; its timing boundary differs from direct replay. The latest mechanisms fail even against their contemporary direct-replay controls.
+[Job 55065](SIGNAL_LOCALITY_RESULTS.md) supplies a new causal lead: moving internal completion signals from matched host-page storage to GPU-local memory reduces original fully joined direct replay from 9.734 to 7.222 µs/pair (25.81%). The profiled interval before both next dispatches start falls from 5.16 to 2.56 µs. All four rounds improve, with unchanged kernels, arguments, dependencies and fences. The normal pooled-host control is 9.653 µs/pair.
+
+This is not a usable runtime candidate yet. Its CPU preparation/readback/verification takes 15.896 µs/pair and is outside that primary execution interval. Historical serial execution around 8.8 µs/pair has a different boundary and is not a matched win. The next architecture must batch signal initialization on the GPU, retain correct host retirement/lifetimes, and demonstrate lower total time in unchanged HIP/PyTorch replay. Earlier mechanisms remain closed.
 
 ## Closed mechanisms
 
@@ -34,12 +36,14 @@ The measured interval is **profiled dispatch end → next dispatch start**, not 
 
 The unresolved interval can include producer release/cache work and completion publication, signal propagation, consumer command-processor recognition or queue arbitration, the next kernel's acquire operation, and dispatch admission. Existing results do not uniquely attribute it to firmware, hardware, or a driver-programmed policy. Bare prepublication demonstrates headroom for this implementation; it is not a proof of the best possible architecture.
 
-## Next evidence required
+## Next implementation and remaining observability
 
-Before another GPU performance variation, identify an observation that separates those boundaries. The completed [source/API observability review](OBSERVABILITY.md) finds no exposed CP barrier-recognition event in the inspected public tracing interfaces; dispatch-level thread tracing also enables serialization. It records the distinct CPU/HSA clock domains and a calibration-first contract for observing actual completion values. Clock-only validation must establish adequate correlation uncertainty before a new Q/K observation can be interpreted. No new GPU experiment or runtime change is included in that review.
+The next bounded implementation is a generic graph-owned GPU-local signal arena with efficient batched initialization/reset and ordinary host-visible final retirement. It must measure initialization and ordering in total launch time; prohibit premature reuse, CPU RMW on PCIe GPU storage and host handlers on private internal signals; and preserve concurrent launches, graph updates and failure lifetimes. First validate the original serial/two-stream HIP/PyTorch workload in one matched run. Only a useful true-parallel win justifies the other microbenchmark holdouts. No workload-shape admission rule or application graph split is proposed.
+
+The placement contrast identifies a useful mechanism without resolving each internal CP timing boundary. Further attribution should use an observation that separates those boundaries. The completed [source/API observability review](OBSERVABILITY.md) finds no exposed CP barrier-recognition event in the inspected public tracing interfaces; dispatch-level thread tracing also enables serialization. It records the distinct CPU/HSA clock domains and a calibration-first contract for observing actual completion values. Clock-only validation must establish adequate correlation uncertainty before a new Q/K observation can be interpreted. No new GPU experiment or runtime change is included in that review.
 
 Useful evidence would timestamp completion-signal visibility, barrier wakeup or queue eligibility, and dispatch admission. A tool that only repeats the existing dispatch start/end trace adds no information. Do not insert unreviewed vendor packets or assume clocks on different XCDs are directly comparable.
 
 A controlled driver/firmware comparison with identical packets could also change the evidence, but needs compatible versions and a reserved node. Do not reboot or change drivers on a shared node. An instrumented AMD build may be necessary if public tools do not expose these boundaries. Prepare a concrete internal reproducer and request before seeking external action. This work has not sent anything to AMD.
 
-A new runtime design needs an identified mechanism with enough predicted benefit to beat serial execution while preserving concurrency, memory visibility, and resource lifetime. Current evidence supports no new admission threshold, coalescing rule, native-wait policy, or helper budget. Other microbenchmark holdouts should run only after a candidate wins the original Hassan case.
+The storage-placement result supplies an identified mechanism with substantial measured execution benefit; the remaining challenge is total-cost implementation. A qualifying runtime design needs enough total benefit to beat serial execution while preserving concurrency, memory visibility, and resource lifetime. Current evidence supports no new admission threshold, coalescing rule, native-wait policy, or helper budget. Other microbenchmark holdouts should run only after a candidate wins the original Hassan case.

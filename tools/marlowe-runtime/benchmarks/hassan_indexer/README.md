@@ -2,7 +2,7 @@
 
 [Stock-only mechanism diagnostics](STOCK_MECHANISM_RESULTS.md) found that this historical extraction captures two lazy split-K buffer fills on a fresh capture stream. Hassan's serving source warms the actual capture stream first. The prewarmed diagnostic removes this artifact, but stock two-stream execution still loses to serial. The [calibrated warm timeline](WARM_TIMELINE_RESULTS.md) shows useful overlap canceled by a larger interval before the next pair. Historical gates below retain their original protocol; do not transfer their absolute times or runtime wins to a prewarmed graph without a matched comparison.
 
-Latest checkpoint: there is still no qualified runtime delivering the requested true parallel Q/K speedup. The original kernels can overlap on distinct queues, but the recurring handoff interval consumes the benefit. CPU readiness with and without satisfied barriers is now closed. Comparisons below are matched within each report; absolute times from different protocols are not interchangeable.
+Latest checkpoint: there is still no qualified runtime delivering the requested true parallel Q/K speedup. The original kernels can overlap on distinct queues, but the recurring handoff interval consumes the benefit. CPU readiness with and without satisfied barriers is now closed. A new GPU-local completion-signal experiment reduces direct Q/K execution time by 25.81%; expensive preparation and HIP integration remain unresolved. Comparisons below are matched within each report; absolute times from different protocols are not interchangeable.
 
 | Experiment | Main result | Decision |
 |---|---|---|
@@ -13,6 +13,7 @@ Latest checkpoint: there is still no qualified runtime delivering the requested 
 | [Exact two-queue AQL replay](DIRECT_AQL_RESULTS.md) | Ordinary joins9.626; native prefixes43.010us/pair | Native internal waits rejected |
 | [CPU-ready publication](CPU_READY_RESULTS.md) |12.169 vs9.638us/pair with matched CPU observer | Retained-barrier scheduler rejected |
 | [Satisfied-barrier omission](READY_OMIT_RESULTS.md) | Scheduler −19.10%, but10.294 vs9.642us/pair prepublished | CPU-readiness architecture closed |
+| [GPU-local completion signals](SIGNAL_LOCALITY_RESULTS.md) | 9.734 → 7.222 µs/pair; recurring profiled interval 5.16 → 2.56 µs | New mechanism win; total-cost/runtime integration pending |
 
 The [architecture checkpoint](ARCHITECTURE_CHECKPOINT.md) records the remaining device-side measurement boundary and the evidence needed before another runtime design. The [polling evidence and observability review](OBSERVABILITY.md) separates long-producer interference from short-join latency and records a clock-calibrated observation contract; no new runtime or GPU result is claimed. The [earlier same-queue design](NEXT_SAME_QUEUE_PARALLEL.md) is closed. None of these diagnostic outcomes is a new production-qualified runtime.
 

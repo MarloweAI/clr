@@ -1,0 +1,42 @@
+{
+  "source_manifest_sha256": "b0258dbc5c2480b1afd335695981513cdc04c849bc46b4039e033b158deb5330",
+  "patch_sha256": "89e7a4554560e5d151328630c8e8641be0c67cef6a3445773137b9101c6686b4",
+  "tool_cmake": {
+    "ClangConfig.cmake": "f2d70592ec58a5c38f633012181961cebedaf1e5715657c96f8c04bd3f2eff33",
+    "FindClang.cmake": "f2d70592ec58a5c38f633012181961cebedaf1e5715657c96f8c04bd3f2eff33",
+    "FindLLVM.cmake": "400e93589d5479b97e1e8f124e4c377dc0f314221881e87e3207b707a3140833",
+    "LLVMConfig.cmake": "400e93589d5479b97e1e8f124e4c377dc0f314221881e87e3207b707a3140833"
+  },
+  "tool_hashes": {
+    "/opt/rocm/llvm/bin/clang": "beaae27cf876812ec1d32f8731317ba837175536a847590f5e51c409c2831b48",
+    "/opt/rocm/llvm/bin/llvm-objcopy": "af1af263c9e269d02d73c8eae75b21146e1f52b1c549126defaf117e3d27de11",
+    "/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/tool-bin/xxd": "b18a89abfa47b36fc3f3516e6672cbf2c8e10c7b19c9787a96b9254c6f76a457"
+  },
+  "library": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/rocr-build-v4/rocr/lib/libhsa-runtime64.so.1.18.70204",
+  "sha256": "2899f94063127a3c6d0bbba0e5c5c54cab3256499f2f0183f6a53631b5fdad12",
+  "commands": [
+    [
+      "cmake",
+      "-S",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/rocr-source",
+      "-B",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/rocr-build-v4",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_PREFIX_PATH=/opt/rocm",
+      "-DClang_DIR=/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/tool-cmake",
+      "-DLLVM_DIR=/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/tool-cmake",
+      "-DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang",
+      "-DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++",
+      "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "-DROCM_PATCH_VERSION=70204"
+    ],
+    [
+      "cmake",
+      "--build",
+      "/workspace/home/sasha/amd-runtime-production/iterations/hassan-signal-locality-20260919/rocr-build-v4",
+      "--parallel",
+      "8"
+    ]
+  ],
+  "ldd": "\tlinux-vdso.so.1 (0x00007ffcf3dbb000)\n\tlibelf.so.1 => /opt/venv/lib/python3.12/site-packages/torch/lib/libelf.so.1 (0x0000719dd2a00000)\n\tlibrocprofiler-register.so.0 => /opt/rocm/lib/librocprofiler-register.so.0 (0x0000719dd2cda000)\n\tlibdrm.so.2 => /opt/amdgpu/lib/x86_64-linux-gnu/libdrm.so.2 (0x0000719dd2cc1000)\n\tlibdrm_amdgpu.so.1 => /opt/amdgpu/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1 (0x0000719dd2cb2000)\n\tlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x0000719dd2600000)\n\t/lib64/ld-linux-x86-64.so.2 (0x0000719dd316b000)\n\tlibnuma.so.1 => /opt/venv/lib/python3.12/site-packages/torch/lib/libnuma.so.1 (0x0000719dd2200000)\n\tlibstdc++.so.6 => /lib/x86_64-linux-gnu/libstdc++.so.6 (0x0000719dd1e00000)\n\tlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x0000719dd2917000)\n\tlibgcc_s.so.1 => /lib/x86_64-linux-gnu/libgcc_s.so.1 (0x0000719dd2c82000)\n\tlibz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x0000719dd2c66000)\n\tlibzstd.so.1 => /lib/x86_64-linux-gnu/libzstd.so.1 (0x0000719dd285d000)\n\tliblzma.so.5 => /lib/x86_64-linux-gnu/liblzma.so.5 (0x0000719dd2c32000)\n\tlibbz2.so.1 => /lib/x86_64-linux-gnu/libbz2.so.1 (0x0000719dd2c1e000)\n"
+}

@@ -1,0 +1,435 @@
+{
+  "passed": true,
+  "job": "55065",
+  "timing_rows": 231,
+  "correctness_rows": 3528,
+  "groups": {
+    "1": {
+      "us_per_pair": {
+        "hip": {
+          "gpu_us": 21.040499210357666,
+          "host_us": 24.34,
+          "submit_us": 10.44
+        },
+        "m0p0": {
+          "latency_us": 14.655,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.09,
+          "publish_us": 0.15,
+          "gate_hold_us": 125.8655
+        },
+        "m1p0": {
+          "latency_us": 14.57,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.08,
+          "publish_us": 0.135,
+          "gate_hold_us": 125.835
+        },
+        "m2p0": {
+          "latency_us": 12.21,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 15.56,
+          "publish_us": 0.13,
+          "gate_hold_us": 125.855
+        },
+        "m0p1": {
+          "latency_us": 14.81,
+          "dispatch_envelope_us": 8.4805,
+          "prepare_us": 0.065,
+          "publish_us": 0.13,
+          "gate_hold_us": 125.84
+        },
+        "m1p1": {
+          "latency_us": 13.93,
+          "dispatch_envelope_us": 7.9205,
+          "prepare_us": 0.065,
+          "publish_us": 0.13,
+          "gate_hold_us": 125.835
+        },
+        "m2p1": {
+          "latency_us": 11.74,
+          "dispatch_envelope_us": 5.86,
+          "prepare_us": 16.23,
+          "publish_us": 0.13,
+          "gate_hold_us": 125.975
+        }
+      },
+      "round_medians": {
+        "hip": {
+          "0": {
+            "gpu_us": 21.040499210357666,
+            "host_us": 24.34,
+            "submit_us": 10.44
+          }
+        },
+        "m0p0": {
+          "0": {
+            "latency_us": 14.655,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.09,
+            "publish_us": 0.15,
+            "gate_hold_us": 125.8655
+          }
+        },
+        "m1p0": {
+          "0": {
+            "latency_us": 14.57,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.08,
+            "publish_us": 0.135,
+            "gate_hold_us": 125.835
+          }
+        },
+        "m2p0": {
+          "0": {
+            "latency_us": 12.21,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 15.56,
+            "publish_us": 0.13,
+            "gate_hold_us": 125.855
+          }
+        },
+        "m0p1": {
+          "0": {
+            "latency_us": 14.81,
+            "dispatch_envelope_us": 8.4805,
+            "prepare_us": 0.065,
+            "publish_us": 0.13,
+            "gate_hold_us": 125.84
+          }
+        },
+        "m1p1": {
+          "0": {
+            "latency_us": 13.93,
+            "dispatch_envelope_us": 7.9205,
+            "prepare_us": 0.065,
+            "publish_us": 0.13,
+            "gate_hold_us": 125.835
+          }
+        },
+        "m2p1": {
+          "0": {
+            "latency_us": 11.74,
+            "dispatch_envelope_us": 5.86,
+            "prepare_us": 16.23,
+            "publish_us": 0.13,
+            "gate_hold_us": 125.975
+          }
+        }
+      },
+      "packet_counts": {
+        "m0q0": 5,
+        "m0q1": 5,
+        "m1q0": 5,
+        "m1q1": 5,
+        "m2q0": 5,
+        "m2q1": 5
+      },
+      "observed_wraps": 0,
+      "profile_clock_gate_pass": true,
+      "min_dependency_gap_us": 2.24,
+      "profile_gaps": {
+        "m0p1": {
+          "first_resume_us": 4.841,
+          "both_resume_us": 5.081,
+          "host_minus_envelope_us": 12.659000000000002
+        },
+        "m1p1": {
+          "first_resume_us": 4.52,
+          "both_resume_us": 5.12,
+          "host_minus_envelope_us": 12.019
+        },
+        "m2p1": {
+          "first_resume_us": 2.24,
+          "both_resume_us": 2.4,
+          "host_minus_envelope_us": 11.76
+        }
+      }
+    },
+    "50": {
+      "us_per_pair": {
+        "hip": {
+          "gpu_us": 10.384888648986816,
+          "host_us": 10.42209125,
+          "submit_us": 2.9489875
+        },
+        "m0p0": {
+          "latency_us": 9.6532275,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.0229,
+          "publish_us": 0.0148,
+          "gate_hold_us": 1.2602625
+        },
+        "m1p0": {
+          "latency_us": 9.7344625,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 0.032187499999999994,
+          "publish_us": 0.0174375,
+          "gate_hold_us": 1.2607125
+        },
+        "m2p0": {
+          "latency_us": 7.22247875,
+          "dispatch_envelope_us": 0.0,
+          "prepare_us": 15.89647875,
+          "publish_us": 0.01485,
+          "gate_hold_us": 1.26085
+        },
+        "m0p1": {
+          "latency_us": 9.66541625,
+          "dispatch_envelope_us": 9.5978125,
+          "prepare_us": 0.022949999999999998,
+          "publish_us": 0.014537499999999998,
+          "gate_hold_us": 1.260575
+        },
+        "m1p1": {
+          "latency_us": 9.688991249999999,
+          "dispatch_envelope_us": 9.620965,
+          "prepare_us": 0.0316375,
+          "publish_us": 0.017025,
+          "gate_hold_us": 1.2605625000000003
+        },
+        "m2p1": {
+          "latency_us": 7.171775,
+          "dispatch_envelope_us": 7.1151824999999995,
+          "prepare_us": 15.90548,
+          "publish_us": 0.014537500000000002,
+          "gate_hold_us": 1.2602125000000002
+        }
+      },
+      "round_medians": {
+        "hip": {
+          "0": {
+            "gpu_us": 10.381640195846558,
+            "host_us": 10.4187275,
+            "submit_us": 2.92875
+          },
+          "1": {
+            "gpu_us": 10.439040064811707,
+            "host_us": 10.485255,
+            "submit_us": 2.9551
+          },
+          "2": {
+            "gpu_us": 10.376339554786682,
+            "host_us": 10.413855000000002,
+            "submit_us": 2.951875
+          },
+          "3": {
+            "gpu_us": 10.388137102127075,
+            "host_us": 10.425455,
+            "submit_us": 2.9461
+          }
+        },
+        "m0p0": {
+          "0": {
+            "latency_us": 9.6536775,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0229,
+            "publish_us": 0.014675,
+            "gate_hold_us": 1.2602000000000002
+          },
+          "1": {
+            "latency_us": 9.6578525,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0229,
+            "publish_us": 0.014125,
+            "gate_hold_us": 1.260325
+          },
+          "2": {
+            "latency_us": 9.6476025,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.022925,
+            "publish_us": 0.014924999999999999,
+            "gate_hold_us": 1.259925
+          },
+          "3": {
+            "latency_us": 9.6527775,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0229,
+            "publish_us": 0.01505,
+            "gate_hold_us": 1.2626025
+          }
+        },
+        "m1p0": {
+          "0": {
+            "latency_us": 9.736524999999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.032400000000000005,
+            "publish_us": 0.016875,
+            "gate_hold_us": 1.2607
+          },
+          "1": {
+            "latency_us": 9.7324,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.031925,
+            "publish_us": 0.018275,
+            "gate_hold_us": 1.2607249999999999
+          },
+          "2": {
+            "latency_us": 9.736627499999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.032275,
+            "publish_us": 0.017725,
+            "gate_hold_us": 1.2597
+          },
+          "3": {
+            "latency_us": 9.720450000000001,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 0.0321,
+            "publish_us": 0.01715,
+            "gate_hold_us": 1.260775
+          }
+        },
+        "m2p0": {
+          "0": {
+            "latency_us": 7.2192775000000005,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 15.9030775,
+            "publish_us": 0.014825,
+            "gate_hold_us": 1.26105
+          },
+          "1": {
+            "latency_us": 7.2258024999999995,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 15.902579999999999,
+            "publish_us": 0.014875000000000001,
+            "gate_hold_us": 1.26065
+          },
+          "2": {
+            "latency_us": 7.224327499999999,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 15.889702499999999,
+            "publish_us": 0.014125,
+            "gate_hold_us": 1.2610999999999999
+          },
+          "3": {
+            "latency_us": 7.22063,
+            "dispatch_envelope_us": 0.0,
+            "prepare_us": 15.8903775,
+            "publish_us": 0.014875000000000001,
+            "gate_hold_us": 1.26005
+          }
+        },
+        "m0p1": {
+          "0": {
+            "latency_us": 9.6572025,
+            "dispatch_envelope_us": 9.5917125,
+            "prepare_us": 0.022925,
+            "publish_us": 0.014575,
+            "gate_hold_us": 1.260475
+          },
+          "1": {
+            "latency_us": 9.66383,
+            "dispatch_envelope_us": 9.59341,
+            "prepare_us": 0.022949999999999998,
+            "publish_us": 0.014499999999999999,
+            "gate_hold_us": 1.2604
+          },
+          "2": {
+            "latency_us": 9.6694525,
+            "dispatch_envelope_us": 9.602215,
+            "prepare_us": 0.022949999999999998,
+            "publish_us": 0.0144,
+            "gate_hold_us": 1.2607
+          },
+          "3": {
+            "latency_us": 9.6670025,
+            "dispatch_envelope_us": 9.602615,
+            "prepare_us": 0.022949999999999998,
+            "publish_us": 0.0149,
+            "gate_hold_us": 1.260675
+          }
+        },
+        "m1p1": {
+          "0": {
+            "latency_us": 9.692129999999999,
+            "dispatch_envelope_us": 9.620215,
+            "prepare_us": 0.03155,
+            "publish_us": 0.017275,
+            "gate_hold_us": 1.260275
+          },
+          "1": {
+            "latency_us": 9.6986275,
+            "dispatch_envelope_us": 9.627012500000001,
+            "prepare_us": 0.03145,
+            "publish_us": 0.016774999999999998,
+            "gate_hold_us": 1.2605000000000002
+          },
+          "2": {
+            "latency_us": 9.682375,
+            "dispatch_envelope_us": 9.620215,
+            "prepare_us": 0.031725,
+            "publish_us": 0.017925,
+            "gate_hold_us": 1.2621
+          },
+          "3": {
+            "latency_us": 9.6858525,
+            "dispatch_envelope_us": 9.621715,
+            "prepare_us": 0.032025,
+            "publish_us": 0.0165,
+            "gate_hold_us": 1.260625
+          }
+        },
+        "m2p1": {
+          "0": {
+            "latency_us": 7.1724250000000005,
+            "dispatch_envelope_us": 7.1150325,
+            "prepare_us": 15.9080775,
+            "publish_us": 0.014275,
+            "gate_hold_us": 1.2586
+          },
+          "1": {
+            "latency_us": 7.1625499999999995,
+            "dispatch_envelope_us": 7.107329999999999,
+            "prepare_us": 15.904955,
+            "publish_us": 0.014575,
+            "gate_hold_us": 1.2610275
+          },
+          "2": {
+            "latency_us": 7.171125,
+            "dispatch_envelope_us": 7.115332499999999,
+            "prepare_us": 15.906005,
+            "publish_us": 0.014500000000000002,
+            "gate_hold_us": 1.26045
+          },
+          "3": {
+            "latency_us": 7.1814,
+            "dispatch_envelope_us": 7.117532499999999,
+            "prepare_us": 15.899305,
+            "publish_us": 0.0152,
+            "gate_hold_us": 1.259975
+          }
+        }
+      },
+      "packet_counts": {
+        "m0q0": 401,
+        "m0q1": 401,
+        "m1q0": 401,
+        "m1q1": 401,
+        "m2q0": 401,
+        "m2q1": 401
+      },
+      "observed_wraps": 36,
+      "profile_clock_gate_pass": true,
+      "min_dependency_gap_us": 2.04,
+      "profile_gaps": {
+        "m0p1": {
+          "first_resume_us": 4.96,
+          "both_resume_us": 5.12,
+          "host_minus_envelope_us": 13.177999999999997
+        },
+        "m1p1": {
+          "first_resume_us": 5.0,
+          "both_resume_us": 5.16,
+          "host_minus_envelope_us": 13.434000000000083
+        },
+        "m2p1": {
+          "first_resume_us": 2.4,
+          "both_resume_us": 2.56,
+          "host_minus_envelope_us": 11.533500000000117
+        }
+      }
+    }
+  },
+  "manifest_sha256": "981f3567a5b96c761d03c4fc8e63555ad25a7ca42360c502b89aa6cc3ba3d48c",
+  "qualified": false
+}

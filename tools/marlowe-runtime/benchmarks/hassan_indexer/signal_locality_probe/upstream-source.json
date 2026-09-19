@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/ROCm/rocm-systems",
+  "commit": "97f5574fe2fdc7bef44fb01545347912ee9f1779",
+  "subtree": "projects/rocr-runtime",
+  "archive_sha256": "8a1f74cb6fb30c36da90e3c66fa258e8e191b7d2196e771ddb0350a20327dfab"
+}
