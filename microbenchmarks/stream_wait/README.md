@@ -57,5 +57,5 @@ all raw trials, and report stock-relative regressions as well as improvements.
 The microbenchmark stock library path is recorded explicitly; the PyTorch libraries
 in a serving image can be different and require their own matched control.
 
-Fresh recovered-runtime results and the separate historical checkpoint will be
-recorded after the qualification runs. No V10 gain is attributed to this branch.
+See [the matched recovered/rebuilt results](RESULTS.md), including the remaining
+stock-relative regressions. No V10 gain is attributed to this branch.
