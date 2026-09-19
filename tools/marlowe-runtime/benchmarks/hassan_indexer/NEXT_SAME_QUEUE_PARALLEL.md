@@ -1,6 +1,8 @@
-# Next bounded hypothesis: parallel graph layers on one AQL queue
+# Closed hypothesis: parallel graph layers on one AQL queue
 
-Status: source/architecture reviewed by the existing Codex xhigh reviewer; NOT implemented or measured. Finish and audit54609 before making this the next experiment. Start from exact K source contents d4d8e82 / HIP0e7d285 baseline, not the polling branch. No full model, no shape/name thresholds, no serialization-as-success.
+Status update2026-09-19: capability experiments54716/54739 reject this architecture on the tested stack; see [results](SAME_QUEUE_RESULTS.md). No runtime port. The original pre-experiment design below is retained as history.
+
+Original status: source/architecture reviewed by the existing Codex xhigh reviewer; NOT implemented or measured. Finish and audit54609 before making this the next experiment. Start from exact K source contents d4d8e82 / HIP0e7d285 baseline, not the polling branch. No full model, no shape/name thresholds, no serialization-as-success.
 
 The original warm Hassan graph already permits useful Q/K overlap. Earlier calibrated wave traces show that overlap is canceled by the interval before the next pair. Completion-packet removal helped; internal publication reduced CPU submission but was GPU-neutral. GPU polling adds dispatch and resource costs. The next question is whether a fully joined graph can express its actual partial order with same-queue dispatch ordering, avoiding cross-queue completion signals entirely.
 

@@ -1,0 +1,145 @@
+{
+  "correctness": "PASS",
+  "positive_control": "PASS",
+  "trials": 272,
+  "samples": 38352,
+  "cells": {
+    "one_block/edge_r2_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r2_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r2_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r1_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r1_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r1_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r0_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r0_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/edge_r0_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/agent_pair": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/none_pair": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/none_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/agent_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/system_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/serial_system": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/serial_none": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "one_block/two_queue_system": {
+      "trials": 8,
+      "overlap": 8
+    },
+    "qk_geometry/edge_r2_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r2_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r2_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r1_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r1_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r1_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r0_a2": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r0_a1": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/edge_r0_a0": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/agent_pair": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/none_pair": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/none_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/agent_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/system_pair_first_unordered": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/serial_system": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/serial_none": {
+      "trials": 8,
+      "overlap": 0
+    },
+    "qk_geometry/two_queue_system": {
+      "trials": 8,
+      "overlap": 8
+    }
+  },
+  "interpretation": "Dispatch-fence capability discriminator only, not original Q/K performance."
+}

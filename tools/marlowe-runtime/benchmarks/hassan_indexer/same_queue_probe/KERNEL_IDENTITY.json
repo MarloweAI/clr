@@ -1,0 +1,10 @@
+{
+  "source_identical": true,
+  "text_identical": true,
+  "text_sha256": "d0361c6f07fe58d680ad4bdce927e1701cda2291922b7858c9bed46b826d3938",
+  "different_sections": [
+    ".gnu.hash",
+    ".dynstr",
+    ".strtab"
+  ]
+}
