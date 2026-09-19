@@ -25,8 +25,8 @@ The audit proves all six mode/lane packet blobs are identical,400unique signals 
 |---|---:|---:|---:|
 | Profile-ON host us/pair |9.477313|9.684353|12.159779|
 | Profile-ON dispatch envelope us/pair |9.412710|9.616065|12.092199|
-| Producer-ready → first successor packet start, median us |4.880|5.040|7.240|
-| Producer-ready → both successor packet starts, median us |5.040|5.200|7.720|
+| Profiled producer end → first successor packet start, median us |4.880|5.040|7.240|
+| Profiled producer end → both successor packet starts, median us |5.040|5.200|7.720|
 | CPU both-zero observation → first action, median us |not observed|0.060|0.290|
 | CPU both-zero observation → both actions, median us |not observed|0.130|0.770|
 
@@ -43,3 +43,5 @@ The extra CPU publication work costs about0.77us after actual readiness is obser
 - Remote:/workspace/home/sasha/amd-runtime-production/iterations/hassan-cpu-ready-20260919/results-j54901.
 
 Prelaunch review by the user-authorized existing Codex xhigh reviewer found no correctness/timing/lifetime blocker. Root mirrored and re-audited all retained artifacts after successful remote audit. Independent post-run review also rehashed the10 source,5 build and21 result entries and rechecked all packets,224 timings,192 readiness traces,96 profile arrays,3500 numerical checks and25472 readiness receipts without a blocker. No active allocation remains. No runtime port or broad holdout campaign is justified by these numbers.
+
+Timing-label clarification: profiled dispatch end is not an independent timestamp of completion-signal-zero visibility. The reported end→successor-start gaps do not separate completion publication from consumer recognition, fences or dispatch. Frozen raw data and harnesses are unchanged.

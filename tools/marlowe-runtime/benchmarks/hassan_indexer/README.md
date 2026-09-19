@@ -2,7 +2,19 @@
 
 [Stock-only mechanism diagnostics](STOCK_MECHANISM_RESULTS.md) found that this historical extraction captures two lazy split-K buffer fills on a fresh capture stream. Hassan's serving source warms the actual capture stream first. The prewarmed diagnostic removes this artifact, but stock two-stream execution still loses to serial. The [calibrated warm timeline](WARM_TIMELINE_RESULTS.md) shows useful overlap canceled by a larger interval before the next pair. Historical gates below retain their original protocol; do not transfer their absolute times or runtime wins to a prewarmed graph without a matched comparison.
 
-Latest checkpoint: [final-kernel completion](KERNEL_COMPLETION_RESULTS.md) recovered 8.57% on the forced segmented grouped path, but still lost to stock and serial. The follow-up [internal packet-publication test](INTERNAL_PUBLICATION_RESULTS.md) is GPU-neutral (−0.06%) despite 11.46% cheaper CPU submission; it is closed without promotion. The next [bounded GPU-polling test](GRAPH_PREWAIT_RESULTS.md) regresses one-pair entry waits 11.22% and grouped internal waits 17.14% despite verified helper execution, so that variant is rejected. The [single-queue capability experiments](SAME_QUEUE_RESULTS.md) reject the proposed shortcut on this setup: all tested single-queue configurations fail to overlap, while identical kernels overlap in all 16 two-queue controls. The [earlier design](NEXT_SAME_QUEUE_PARALLEL.md) is closed without a runtime port. The [exact captured-Q/K two-queue replay](DIRECT_AQL_RESULTS.md) now isolates short internal joins: native prefixes regress grouped replay9.626→43.010us/pair (4.47x), while bare prepublished replay shows only modest headroom against K10.273us/pair and still has about5us between dependent pairs. That native internal treatment is rejected. The [CPU-ready publication test](CPU_READY_RESULTS.md) also regresses:12.169us/pair versus9.638 with a matched CPU-observer control (+26.25%), so that scheduler with retained ANDs is rejected. There is still no qualified runtime delivering the requested true parallel Q/K speedup.
+Latest checkpoint: there is still no qualified runtime delivering the requested true parallel Q/K speedup. The original kernels can overlap on distinct queues, but the recurring handoff interval consumes the benefit. CPU readiness with and without satisfied barriers is now closed. Comparisons below are matched within each report; absolute times from different protocols are not interchangeable.
+
+| Experiment | Main result | Decision |
+|---|---|---|
+| [Final-kernel completion](KERNEL_COMPLETION_RESULTS.md) | Forced segmented grouped path −8.57%; still slower than stock/serial | Useful recovery, not the goal |
+| [Internal packet publication](INTERNAL_PUBLICATION_RESULTS.md) | GPU −0.06%; CPU submission −11.46% | GPU-neutral; closed |
+| [GPU prewait](GRAPH_PREWAIT_RESULTS.md) | Entry +11.22%; grouped internal waits +17.14% | Rejected |
+| [Single-queue capability](SAME_QUEUE_RESULTS.md) | No tested same-queue overlap; all16 two-queue controls overlap | No runtime port |
+| [Exact two-queue AQL replay](DIRECT_AQL_RESULTS.md) | Ordinary joins9.626; native prefixes43.010us/pair | Native internal waits rejected |
+| [CPU-ready publication](CPU_READY_RESULTS.md) |12.169 vs9.638us/pair with matched CPU observer | Retained-barrier scheduler rejected |
+| [Satisfied-barrier omission](READY_OMIT_RESULTS.md) | Scheduler −19.10%, but10.294 vs9.642us/pair prepublished | CPU-readiness architecture closed |
+
+The [architecture checkpoint](ARCHITECTURE_CHECKPOINT.md) records the remaining device-side measurement boundary and the evidence needed before another runtime design. The [earlier same-queue design](NEXT_SAME_QUEUE_PARALLEL.md) is closed. None of these diagnostic outcomes is a new production-qualified runtime.
 
 Single-GPU microbenchmark extracted from [Hassan's reproducer](https://github.com/MarloweAI/native-runtime-four-arm-reproducer/tree/b8a96bb4d842f628142e417ebb6753d4492bcaff).
 It reuses the exact 91-line scheduler and existing AITER/FlyDSL GEMMs. No GPU compute kernel is modified.

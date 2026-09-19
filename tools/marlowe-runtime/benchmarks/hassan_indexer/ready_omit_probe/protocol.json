@@ -1,0 +1,55 @@
+{
+  "lib": "/workspace/home/sasha/amd-runtime-production/iterations/hassan-kernel-completion-20260918/lib",
+  "controls": {
+    "AMD_DIRECT_DISPATCH": "1",
+    "AMD_LOG_LEVEL": "0",
+    "AMD_LOG_MASK": "0",
+    "DEBUG_HIP_DYNAMIC_QUEUES": "0",
+    "DEBUG_HIP_GRAPH_DOT_PRINT": "0",
+    "GPU_NATIVE_EVENT_TRACE": "0",
+    "GPU_STREAMOPS_CP_WAIT": "0",
+    "GPU_MAX_HW_QUEUES": "4",
+    "GPU_NATIVE_EVENT_WAIT": "1",
+    "GPU_GRAPH_NODE_COUNT_PLACEMENT": "1",
+    "HIP_VISIBLE_DEVICES": "0",
+    "GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE": "0",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER": "0",
+    "GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL": "1",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS": "1",
+    "GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL": "1",
+    "GPU_GRAPH_DIAGNOSTIC_SPARE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE": "1",
+    "DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING": "2",
+    "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE": "1",
+    "GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS": "0"
+  },
+  "libraries": {
+    "libamdhip64": "0e7d28519f042d62539007deb9b849edc191eb7cb7ed5abfafe4b58f0f05dbb4",
+    "libhsa-runtime64": "b8cdfe93d343649a35c1daf73a0a3a6840f09379ebeee9be65670461ffea43f4"
+  },
+  "external_sources": {
+    "/sgl-workspace/aiter/aiter/tuned_gemm.py": "8408a8914c76608d153c132d087e4cd6a614371bc71815cb98045f904b14d3a2",
+    "/sgl-workspace/aiter/aiter/ops/flydsl/gemm_kernels.py": "32cd04fe42d188e02c28c1748e11c9a0ca009e6346aa8c38b5640f4b79fa205d"
+  },
+  "groups": [
+    50
+  ],
+  "units": 200,
+  "rounds": 4,
+  "trials": 8,
+  "data_sha256": {
+    "qx": "a1335a277b254048cf5bc6b43f40ce807455c99febf21480a1ee0a2443f7d5e5",
+    "qw": "25a8cf031ba56c0612ffea1fe69c720dfe34ad722ef2920c05f1abff7586714f",
+    "kx": "89d78f55ea1dc2f9b6f1810cb81972e9eec634ccd353c62ea2fe1ce70e5edf4f",
+    "kw": "c1a5aedbb8c10c511fae88161fb72dcd3c3384183641e34ade070c521621bda3"
+  },
+  "modes": {
+    "0": "whole_dag_prepublication",
+    "1": "whole_dag_with_cpu_observer",
+    "2": "actual_cpu_ready_layer_publication",
+    "3": "actual_cpu_ready_publication_omit_satisfied_AND"
+  }
+}

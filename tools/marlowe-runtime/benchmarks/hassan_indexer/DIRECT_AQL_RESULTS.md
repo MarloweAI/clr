@@ -21,9 +21,9 @@ The profiling pass uses HSA dispatch timestamps in the common system clock domai
 |---|---:|---:|
 | Profile-ON host time, us/pair |9.553353|43.052798|
 | Profile-ON dispatch envelope, us/pair |9.483513|42.981715|
-| Median producer-ready → first next packet start, internal joins, us |4.921|8.401|
-| Median producer-ready → both next packet starts, internal joins, us |5.120|41.242|
-| Median producer-ready → both next packet starts, ordinary graph-boundary joins, us |5.120|5.200|
+| Median profiled producer end → first next packet start, internal joins, us |4.921|8.401|
+| Median profiled producer end → both next packet starts, internal joins, us |5.120|41.242|
+| Median profiled producer end → both next packet starts, ordinary graph-boundary joins, us |5.120|5.200|
 
 Timing columns use medians of the four round medians. Gap columns pool the6,272 internal and96 replay-boundary intervals per mode from the profiling traces. The internal gap is computed from the later of the two producer end timestamps to the first/both next dispatch start timestamps. Native prefixes appear only on the49 internal boundaries per50-pair graph, not on the three boundaries between replays. Those untreated boundaries remain around5.2us, while treated internal joins grow to41.2us for both successors. This is consistent with the causal timing result and localizes the slowdown to the native internal treatment. The median dispatch-interval overlap is4.28us with ordinary joins and0 with native prefixes; this is a dispatch-profile observation, not a new calibrated proof of exact kernel overlap.
 
@@ -51,3 +51,5 @@ Every output is checked against FP32 after capture, after changed inputs with po
 - Raw remote:/workspace/home/sasha/amd-runtime-production/iterations/hassan-direct-aql-20260919/results-j54847.
 
 Close the native-at-every-short-internal-join hypothesis. Do not relax the production admission guard based on long-producer polling results. Do not implement invasive host-lifetime changes merely to explain this remaining gap. A subsequent experiment must distinguish specific device packet costs, with a matched ready/pending or no-dependency control that preserves its claimed semantics; no firmware attribution or runtime promotion is justified yet. The goal of a substantial true-parallel Hassan runtime win remains open.
+
+Timing-label clarification: profiled dispatch end is not an independent timestamp of completion-signal-zero visibility. The reported end→successor-start gaps do not separate completion publication from consumer recognition, fences or dispatch. Frozen raw data and harnesses are unchanged.
