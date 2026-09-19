@@ -1,0 +1,1 @@
+Frozen55399 probe. Build requires the sibling graph-local v3 headers/build compilation database and exact69f3df4 HIP/2899f940 HSA; paths are preserved for provenance, not a self-contained build. Full raw root is documented in parent BOUNDARY_FENCES_RESULTS.md.
