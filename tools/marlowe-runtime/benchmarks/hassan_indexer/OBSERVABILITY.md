@@ -2,6 +2,8 @@
 
 2026-09-19. Read-only source/evidence review after jobs 54901/54925. No new GPU experiment, runtime build, driver change or full-model run. The requested parallel Q/K speedup remains unachieved.
 
+The user clarified that graph splitting is a diagnostic workaround only. The required solution belongs inside the runtime and must accelerate the existing application graphs without application, kernel, shape, or dependency changes. Split-graph polling numbers are evidence about a mechanism, not an acceptable final configuration.
+
 ## What Hassan independently reproduced
 
 These are user-supplied numbers, not newly audited local trials. A 2,048-kernel producer runs while one or two other streams wait for it. A wait spans the long producer sequence; this is different from joining after each Q/K pair.

@@ -2,6 +2,8 @@
 
 The goal remains a substantial speedup from true parallel execution of the original Q/K workload, followed by regression checks on the other microbenchmarks. It is not achieved. Changing kernels or shapes, serializing logical streams, or weakening dependencies would not meet that goal. There is no newly qualified runtime and no full-model work is planned.
 
+Application transparency is a requirement: the existing application, HIP/PyTorch stream/event calls and captured graphs must run unchanged. Graph splitting and explicit application polling are diagnostic controls, not deployment proposals or qualification wins. The runtime may improve its internal packet lowering and scheduling while preserving the original dependency and memory-ordering semantics. A candidate must deliver real overlap and lower total time on the unchanged workload.
+
 The best fully joined direct replay is about 9.64 µs/pair. Historical serial execution is about 8.75–8.87 µs/pair under its recorded HIP protocol; its timing boundary differs from direct replay. The latest mechanisms fail even against their contemporary direct-replay controls.
 
 ## Closed mechanisms
