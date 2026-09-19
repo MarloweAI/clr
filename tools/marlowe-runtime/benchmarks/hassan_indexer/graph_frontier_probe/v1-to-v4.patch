@@ -1,0 +1,169 @@
+diff --git a/hipamd/src/hip_graph_internal.cpp b/hipamd/src/hip_graph_internal.cpp
+index 537ce6b..0292d8e 100644
+--- a/hipamd/src/hip_graph_internal.cpp
++++ b/hipamd/src/hip_graph_internal.cpp
+@@ -2350,6 +2350,7 @@ bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
+     for (auto* node : segment.nodes) {
+       if (node->GetType() != hipGraphNodeTypeKernel || !node->GraphCaptureEnabled() ||
+           node->GetDeviceId() != launch_stream->DeviceId()) return false;
++      if (GPU_GRAPH_DIAGNOSTIC_FRONTIER && node->capturedKernelOwners_.empty()) return false;
+     }
+     auto it = segmentBatches_.find(segment.id);
+     if (it == segmentBatches_.end() || it->second.packet_batches.size() != 1 ||
+@@ -2564,6 +2565,24 @@ hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
+   const uint64_t frontier = generation->arena->handles.at(segments_.size() + 1);
+   retain();
+   auto release_owner = [this, generation, serial](bool safe) {
++    // The ordinary bridge and every successor reader have retired. Do not
++    // inspect unproduced tokens after a partial-publication diagnostic failure.
++    if (safe && GPU_GRAPH_DIAGNOSTIC_FRONTIER_TIMESTAMPS) {
++      for (size_t i = 0; i < generation->published_segments; ++i) {
++        const auto& receipt = generation->dispatch_receipts.at(i);
++        uint64_t start = 0, end = 0, frequency = 0;
++        bool valid = generation->arena->dispatchTiming(receipt.segment, start, end, frequency);
++        fprintf(stderr, "GRAPH_FRONTIER_DISPATCH graph=%p serial=%llu segment=%d physical=%llu kernels=%zu start=%llu end=%llu frequency=%llu valid=%u kernel=%s\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial), receipt.segment,
++                static_cast<unsigned long long>(receipt.physical), receipt.kernels,
++                static_cast<unsigned long long>(start), static_cast<unsigned long long>(end),
++                static_cast<unsigned long long>(frequency), valid, receipt.name.c_str());
++      }
++    }
++    generation->dispatch_receipts.clear();
++    generation->published_segments = 0;
++    // Releasing a program may enter the driver; never do so under pool_mutex.
++    if (safe) generation->kernel_owners.clear();
+     {
+       std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
+       generation->quarantined = !safe;
+@@ -2611,11 +2630,23 @@ hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
+       continue;
+     }
+ 
++    std::unordered_set<amd::Kernel*> kernel_owners;
++    assert(generation->kernel_owners.empty());
++    for (const auto& segment : segments_) {
++      for (auto* node : segment.nodes) {
++        for (const auto& owner : node->capturedKernelOwners_) {
++          if (kernel_owners.insert(owner.get()).second) generation->kernel_owners.push_back(owner);
++        }
++      }
++    }
+     const uint64_t launch_queue = launch_stream->getQueueID();
+     const uint64_t entry_dependency = chained ? snapshot->graphFrontier() : entry;
+     std::unordered_map<uint64_t, uint64_t> tails;
+     std::vector<SegmentPlan> plans;
+     plans.reserve(segments_.size());
++    if (GPU_GRAPH_DIAGNOSTIC_FRONTIER_TIMESTAMPS) {
++      generation->dispatch_receipts.reserve(segments_.size());
++    }
+     auto entry_plan = launch_stream->vdev()->prepareGraphFrontierJoin({}, entry, false);
+     auto empty_join = launch_stream->vdev()->prepareGraphFrontierJoin({}, frontier, true);
+     bool prepared = entry_plan != nullptr && empty_join != nullptr;
+@@ -2646,6 +2677,10 @@ hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
+         auto join = launch_stream->vdev()->prepareGraphFrontierJoin(terminal, frontier, true);
+         if (packets == nullptr || join == nullptr) { prepared = false; break; }
+         plans.push_back({stream, id, std::move(packets), std::move(join)});
++        if (GPU_GRAPH_DIAGNOSTIC_FRONTIER_TIMESTAMPS) {
++          generation->dispatch_receipts.push_back({id, queue, batch.dispatchPackets.size(),
++                                                   batch.dispatchKernelNames.back()});
++        }
+         published_order.insert(id);
+       }
+     }
+@@ -2675,6 +2710,7 @@ hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
+     for (const auto& plan : plans) {
+       plan.stream->vdev()->publishGraphFrontierBatch(*plan.packets);
+       ++submitted;
++      if (GPU_GRAPH_DIAGNOSTIC_FRONTIER_TIMESTAMPS) generation->published_segments = submitted;
+       if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
+         fprintf(stderr, "GRAPH_FRONTIER_SEGMENT graph=%p serial=%llu segment=%d physical=%llu\n",
+                 static_cast<void*>(this), static_cast<unsigned long long>(serial), plan.id,
+diff --git a/hipamd/src/hip_graph_internal.hpp b/hipamd/src/hip_graph_internal.hpp
+index de78611..187f4b3 100644
+--- a/hipamd/src/hip_graph_internal.hpp
++++ b/hipamd/src/hip_graph_internal.hpp
+@@ -262,8 +262,17 @@ class GraphNode : public hipGraphNodeDOTAttribute {
+     std::for_each(gpuPackets_.begin(), gpuPackets_.end(), [](auto p) { delete[] p; });
+     // Clear the pointer array
+     gpuPackets_.clear();
++    capturedKernelOwners_.clear();
+ 
+     for (auto& command : commands_) {
++      // Bind executable ownership to the exact captured packet, not mutable
++      // kernelParams_ which a later exec update may replace before recapture.
++      if (GPU_GRAPH_DIAGNOSTIC_FRONTIER && command->type() == CL_COMMAND_NDRANGE_KERNEL) {
++        auto& kernel = const_cast<amd::Kernel&>(
++            static_cast<amd::NDRangeKernelCommand*>(command)->kernel());
++        kernel.retain();
++        capturedKernelOwners_.emplace_back(&kernel, [](amd::Kernel* owner) { owner->release(); });
++      }
+       command->setPktCapturingState(true, &gpuPackets_, kernArgMgr, &capturedKernelName_);
+       // Enqueue command to capture GPU Packet. The packet is not submitted to the device.
+       // The packet is stored in gpuPacket_ and submitted during graph launch.
+@@ -484,6 +493,7 @@ class GraphNode : public hipGraphNodeDOTAttribute {
+   bool signal_is_required_ = false;   //!< This node requires a signal on the command
+   std::vector<uint8_t*> gpuPackets_;  //!< GPU Packet to enqueue during graph launch
+   std::string capturedKernelName_;
++  std::vector<std::shared_ptr<amd::Kernel>> capturedKernelOwners_;
+   size_t alignedKernArgSize_ = 256;       //!< Aligned size required for kernel args
+   size_t kernargSegmentByteSize_ = 512;   //!< Kernel arg segment byte size
+   size_t kernargSegmentAlignment_ = 256;  //!< Kernel arg segment alignment
+@@ -1079,6 +1089,10 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+ 
+   struct GraphSignalGeneration {
+     std::unique_ptr<amd::device::VirtualDevice::GraphSignalArena> arena;
++    std::vector<std::shared_ptr<amd::Kernel>> kernel_owners;
++    struct DispatchReceipt { int segment; uint64_t physical; size_t kernels; std::string name; };
++    std::vector<DispatchReceipt> dispatch_receipts;
++    size_t published_segments = 0;
+     bool busy = false;
+     bool quarantined = false;
+   };
+diff --git a/rocclr/device/device.hpp b/rocclr/device/device.hpp
+index 87baf19..17a4f92 100644
+--- a/rocclr/device/device.hpp
++++ b/rocclr/device/device.hpp
+@@ -1334,6 +1334,8 @@ class VirtualDevice : public amd::ReferenceCountedObject {
+   class GraphSignalArena {
+    public:
+     std::vector<uint64_t> handles;
++    // Diagnostic only, after ordinary GPU retirement and before arena reuse.
++    virtual bool dispatchTiming(size_t, uint64_t&, uint64_t&, uint64_t&) const { return false; }
+     virtual ~GraphSignalArena() = default;
+   };
+   virtual std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) {
+diff --git a/rocclr/device/rocm/rocvirtual.cpp b/rocclr/device/rocm/rocvirtual.cpp
+index 6af567d..580fa0e 100644
+--- a/rocclr/device/rocm/rocvirtual.cpp
++++ b/rocclr/device/rocm/rocvirtual.cpp
+@@ -1670,6 +1670,17 @@ class RocGraphSignalArena final : public device::VirtualDevice::GraphSignalArena
+   uint64_t* table = nullptr;
+   std::vector<volatile hsa_signal_value_t*> values;
+   explicit RocGraphSignalArena(const Device& dev) : device(dev) {}
++  bool dispatchTiming(size_t index, uint64_t& start, uint64_t& end,
++                      uint64_t& frequency) const override {
++    if (index >= handles.size()) return false;
++    hsa_amd_profiling_dispatch_time_t time{};
++    if (Hsa::system_get_info(HSA_SYSTEM_INFO_TIMESTAMP_FREQUENCY, &frequency) != HSA_STATUS_SUCCESS ||
++        Hsa::profiling_get_dispatch_time(device.getBackendDevice(), hsa_signal_t{handles[index]},
++                                        &time) != HSA_STATUS_SUCCESS) return false;
++    start = time.start; end = time.end;
++    return frequency != 0 && end > start;
++  }
++
+   ~RocGraphSignalArena() override {
+     for (uint64_t handle : handles) {
+       if (Hsa::signal_destroy(hsa_signal_t{handle}) != HSA_STATUS_SUCCESS) std::abort();
+diff --git a/rocclr/utils/flags.hpp b/rocclr/utils/flags.hpp
+index 3cd9b82..88d207f 100644
+--- a/rocclr/utils/flags.hpp
++++ b/rocclr/utils/flags.hpp
+@@ -169,6 +169,8 @@ release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
+         "Diagnostic: import graph dependencies in the next captured batch")  \
+ release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
+         "Diagnostic: fail a final-kernel batch after a published prefix.")    \
++release(bool, GPU_GRAPH_DIAGNOSTIC_FRONTIER_TIMESTAMPS, false,              \
++        "Diagnostic: read completed private graph kernel dispatch timestamps") \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_FRONTIER, false,                         \
+         "Diagnostic: private GPU graph completion with deferred host retirement") \
+ release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS, false,                    \
