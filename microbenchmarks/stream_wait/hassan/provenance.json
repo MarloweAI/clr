@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/MarloweAI/native-runtime-four-arm-reproducer",
+  "commit": "b8a96bb4d842f628142e417ebb6753d4492bcaff",
+  "scheduler_original_path": "python/sglang/srt/model_executor/runner_utils/indexer_projection_schedule.py",
+  "scheduler_sha256": "c9401b232180bd6e992b9de3b66bb53ca1e4351ac677d89feb3e6655666cb68b",
+  "projection_dispatch_sha256": "e823cde9eec5c8b5fa59baa44c1cf7bcefc84ee8ff382780a73b0d5b899156da",
+  "scope": "Single-GPU extraction of existing Q/K projections and unchanged event scheduler; not the TP8 serving endpoint. Inputs and weights will use seeded synthetic data with the supplied shapes/dtypes/strides; no older experimental runtimes."
+}
