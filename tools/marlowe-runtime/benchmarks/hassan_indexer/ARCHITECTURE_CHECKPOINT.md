@@ -1,5 +1,8 @@
 # Hassan Q/K architecture checkpoint after job 55272
 
+
+Latest checkpoint: [actual HIP graph-frontier job55508](GRAPH_FRONTIER_RESULTS.md) closes the warm one-pair regression:11.764 vs stock14.197 µs/pair (−17.14%), grouped7.304 vs10.038 (−27.24%). Remote/local audits pass9 lifecycle processes and288 timings. This supersedes historical statements below that no HIP port exists. It is still diagnostic: direct overlap proof, exact function/module ownership, hard capacity, broader holdouts and the unchanged serving application remain unqualified. No Goal2 production results changed.
+
 The goal remains a substantial speedup from true parallel execution of the original Q/K workload, followed by regression checks on the other microbenchmarks. It is not achieved. Changing kernels or shapes, serializing logical streams, or weakening dependencies would not meet that goal. Actual HIP now wins on the synthetic 50-pair microbenchmark, but the original-sized one-pair fallback still regresses. The grouped result does not establish a win on Hassan’s unchanged serving graph. There is no newly qualified runtime and no full-model work is planned in Goal 1.
 
 Application transparency is a requirement: the existing application, HIP/PyTorch stream/event calls and captured graphs must run unchanged. Graph splitting and explicit application polling are diagnostic controls, not deployment proposals or qualification wins. The runtime may improve its internal packet lowering and scheduling while preserving the original dependency and memory-ordering semantics. A candidate must deliver real overlap and lower total time on the unchanged workload.

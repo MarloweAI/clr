@@ -1,0 +1,2438 @@
+diff --git a/hipamd/src/hip_graph_internal.cpp b/hipamd/src/hip_graph_internal.cpp
+index 136c526..537ce6b 100644
+--- a/hipamd/src/hip_graph_internal.cpp
++++ b/hipamd/src/hip_graph_internal.cpp
+@@ -224,6 +224,9 @@ hipError_t Graph::ScheduleNodes() {
+       segments_.clear();
+       node_to_segment_id_.clear();
+       segments_per_level_.clear();
++      assignment_segments_per_level_.clear();
++      assignment_device_id_ = -1;
++      entry_fused_device_id_ = -1;
+       max_dependency_level_ = -1;
+       // Disable segment scheduling for this graph permanently
+       use_segment_scheduling_ = false;
+@@ -401,6 +404,9 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
+   max_dependency_level_ = -1;
+   max_streams_ = 1;
+   segments_per_level_.clear();
++  assignment_segments_per_level_.clear();
++  assignment_device_id_ = -1;
++  entry_fused_device_id_ = -1;
+ 
+   // Initialize in-degree for each segment and enqueue root segments
+   for (size_t i = 0; i < segments_.size(); ++i) {
+@@ -447,6 +453,43 @@ void Graph::CalculateSegmentTopoDependencyLevels() {
+     }
+   }
+ 
++  // Keep submission order unchanged. This empirical placement policy is only
++  // qualified for a flat graph whose nodes all belong to one known device.
++  if (GPU_GRAPH_NODE_COUNT_PLACEMENT && !segments_.empty() &&
++      !segments_.front().nodes.empty()) {
++    const int device_id = segments_.front().nodes.front()->GetDeviceId();
++    const bool single_device = device_id >= 0 &&
++        std::all_of(segments_.begin(), segments_.end(), [device_id](const Segment& segment) {
++          return segment.child_graph_ptr == nullptr && !segment.nodes.empty() &&
++              std::all_of(segment.nodes.begin(), segment.nodes.end(), [device_id](Node node) {
++                return node->GetDeviceId() == device_id;
++              });
++        });
++    if (single_device) {
++      assignment_device_id_ = device_id;
++      assignment_segments_per_level_ = segments_per_level_;
++      for (auto& level : assignment_segments_per_level_) {
++        std::stable_sort(level.second.begin(), level.second.end(), [this](int lhs, int rhs) {
++          return segments_[lhs].nodes.size() > segments_[rhs].nodes.size();
++        });
++      }
++    }
++  }
++
++  if (!segments_.empty() && !segments_.front().nodes.empty()) {
++    const int device_id = segments_.front().nodes.front()->GetDeviceId();
++    if (device_id >= 0 &&
++        std::all_of(segments_.begin(), segments_.end(), [device_id](const Segment& segment) {
++          return segment.child_graph_ptr == nullptr && !segment.nodes.empty() &&
++              std::all_of(segment.nodes.begin(), segment.nodes.end(), [device_id](Node node) {
++                return node->GetDeviceId() == device_id &&
++                    node->GetType() == hipGraphNodeTypeKernel && node->GraphCaptureEnabled();
++              });
++        })) {
++      entry_fused_device_id_ = device_id;
++    }
++  }
++
+   // Calculate max_streams_ based on maximum parallelism at any dependency level
+   for (const auto& level_segments : segments_per_level_) {
+     max_streams_ = std::max(max_streams_, static_cast<int>(level_segments.second.size()));
+@@ -931,8 +974,22 @@ hipError_t GraphExec::Init() {
+         // Queue pooling can assign one candidate the same hardware queue as
+         // the launch stream. Give UpdateStreams a bounded spare so it can
+         // select independent queues before using its collision fallback.
+-        const bool add_spare = use_segment_scheduling_ && dev_id == instantiateDeviceId_ &&
+-                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES;
++        // Packet-capture-eligible kernel graphs can use independent compute queues.
++        // Mixed graphs use the spare only with the qualified placement policy;
++        // otherwise preserve their required-count queue allocation.
++        const bool qualified_spare = entry_fused_device_id_ == dev_id ||
++                                     assignment_device_id_ == dev_id;
++        const bool add_spare = GPU_GRAPH_DIAGNOSTIC_SPARE && use_segment_scheduling_ &&
++                               dev_id == instantiateDeviceId_ &&
++                               num_streams < DEBUG_HIP_FORCE_GRAPH_QUEUES &&
++                               (!GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE || qualified_spare);
++        if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++          fprintf(stderr, "GRAPH_SPARE_POLICY graph=%p device=%d required=%u spare_requested=%u "
++                  "qualified_policy=%u kernel_eligible=%u placement_eligible=%u\n",
++                  static_cast<void*>(this), dev_id, num_streams, add_spare,
++                  GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE,
++                  entry_fused_device_id_ == dev_id, assignment_device_id_ == dev_id);
++        }
+         status = CreateStreams(num_streams + (add_spare ? 1u : 0u), dev_id);
+         if (status == hipErrorOutOfMemory && add_spare) {
+           // The spare is optional. CreateStreams cleans up on failure, so
+@@ -1216,6 +1273,8 @@ hipError_t GraphExec::CaptureAQLPackets() {
+ 
+ // ================================================================================================
+ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     return hipSuccess;
+   }
+@@ -1318,6 +1377,8 @@ hipError_t GraphExec::UpdateAQLPacket(hip::GraphNode* node) {
+ // ================================================================================================
+ hipError_t GraphExec::UpdatePacketBatchesForNodeEnableDisable(hip::GraphNode* node,
+                                                               bool isEnabled) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   if (!node->GraphCaptureEnabled()) {
+     // Only handle single stream case with captured nodes
+     return hipSuccess;
+@@ -1401,12 +1462,58 @@ void GraphExec::AssignStreamsToSegments(
+ // ================================================================================================
+ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+                                                const std::vector<hip::Stream*>& streams,
+-                                               hipError_t* out_status) {
++                                               hipError_t* out_status,
++                                               amd::Marker* completion_marker) {
+   hipError_t status = hipSuccess;
+   if (out_status != nullptr) {
+     *out_status = hipSuccess;
+   }
+ 
++  // No segment has a side-stream consumer on this path. Keep every node and
++  // the existing topological segment order, but retire the published prefix once.
++  // Each EnqueueSegment still publishes its original packet batches separately.
++  const bool shared_retire = GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE &&
++      streams_coalesced_ && CanCoalesce(launch_stream) &&
++      streams.size() == 1 && streams.front() == launch_stream &&
++      amd::IS_HIP && AMD_DIRECT_DISPATCH && !DEBUG_HIP_FORCE_ASYNC_QUEUE &&
++      !launch_stream->properties().test(CL_QUEUE_PROFILING_ENABLE) &&
++      !amd::Agent::shouldPostEventEvents() &&
++      !amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) &&
++      !amd::activity_prof::IsEnabled(::OP_ID_COPY) &&
++      !amd::activity_prof::IsEnabled(::OP_ID_BARRIER);
++  if (shared_retire) {
++    auto* accumulate = new amd::AccumulateCommand(*launch_stream, {}, nullptr);
++    for (int level = 0; level <= max_dependency_level_ && status == hipSuccess; ++level) {
++      auto found = segments_per_level_.find(level);
++      if (found == segments_per_level_.end()) continue;
++      for (int id : found->second) {
++        const auto& segment = segments_[id];
++        if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++          fprintf(stderr, "GRAPH_QUEUE_EXECUTE graph=%p segment=%d level=%d nodes=%zu "
++                          "logical=%llu physical=%llu is_launch=1\n",
++                  static_cast<void*>(this), id, level, segment.nodes.size(),
++                  static_cast<unsigned long long>(launch_stream->GetStreamId()),
++                  static_cast<unsigned long long>(launch_stream->getQueueID()));
++        }
++        status = EnqueueSegment(segment, launch_stream, accumulate);
++        if (status != hipSuccess) break;
++      }
++    }
++    // Even a failed batch can have published work. This command retires that
++    // prefix before Run appends its graph-release callback on the same stream.
++    accumulate->enqueue();
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_SHARED_RETIRE graph=%p accumulators=1 status=%d\n",
++              static_cast<void*>(this), static_cast<int>(status));
++    }
++    if (out_status != nullptr) *out_status = status;
++    if (status != hipSuccess) {
++      accumulate->release();
++      return nullptr;
++    }
++    return accumulate;  // Same owning-reference contract as the ordinary path.
++  }
++
+   // Lambda to create and enqueue a marker with wait list
+   auto enqueueMarker = [](hip::Stream* stream, const amd::Command::EventWaitList& wait_list) {
+     auto marker = new amd::Marker(*stream, true, wait_list);
+@@ -1421,12 +1528,119 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+   // Map to track which stream each segment uses - MUST persist across all levels
+   // so we can look up streams for dependencies from previous levels
+   std::unordered_map<int, hip::Stream*> segment_to_stream;
+-  // Map to track the last enqueued command for each segment for dependency tracking
+-  // This is critical for handling cross-level dependencies with stream reuse
++  // Per-segment command aliases for dependency tracking. The ordinary path owns
++  // one reference per segment; the lane-retirement path has unique region owners.
+   std::unordered_map<int, amd::Command*> segment_last_command;
++  // Non-owning stream-tail aliases, updated in actual enqueue order.
++  // Several independent segments can share a level and a logical stream.
++  std::unordered_map<hip::Stream*, amd::Command*> stream_last_command_map;
++
++  struct RetainedFrontier {
++    amd::Command* event = nullptr;
++    ~RetainedFrontier() { if (event != nullptr) event->release(); }
++  } frontier;
++  std::unordered_set<hip::Stream*> deferred_entry_streams;
++  const bool deferred_entry = amd::IS_HIP && AMD_DIRECT_DISPATCH &&
++      !streams.empty() && max_streams_dev_.size() == 1 &&
++      entry_fused_device_id_ == launch_stream->DeviceId() &&
++      !launch_stream->properties().test(CL_QUEUE_PROFILING_ENABLE) &&
++      !amd::Agent::shouldPostEventEvents() &&
++      !amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) &&
++      !amd::activity_prof::IsEnabled(::OP_ID_COPY) &&
++      !amd::activity_prof::IsEnabled(::OP_ID_BARRIER);
++
++  // A region may span unexported boundaries on one logical stream. An exported
++  // segment must retire at its original boundary: extending its completion past
++  // unrelated later work would reduce the consumer's available parallelism.
++  const bool lane_retire = GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE && deferred_entry &&
++      instantiateDeviceId_ == launch_stream->DeviceId() &&
++      !DEBUG_HIP_FORCE_ASYNC_QUEUE &&
++      std::all_of(streams.begin(), streams.end(), [](hip::Stream* stream) {
++        return !stream->properties().test(CL_QUEUE_PROFILING_ENABLE);
++      }) && std::all_of(segments_.begin(), segments_.end(), [this](const Segment& segment) {
++        auto it = segmentBatches_.find(segment.id);
++        return it != segmentBatches_.end() &&
++            it->second.node_capture_status.size() == segment.nodes.size() &&
++            std::all_of(it->second.node_capture_status.begin(),
++                        it->second.node_capture_status.end(), [](bool captured) { return captured; });
++      });
++  const bool kernel_retire = GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE && lane_retire;
++  std::unordered_set<int> exported_segments;
++  std::unordered_set<int> terminal_segments;
++  struct RetirementRegion {
++    hip::Stream* stream;
++    amd::AccumulateCommand* command;  // Sole owning reference; maps below are aliases.
++    bool sealed = false;
++  };
++  std::vector<RetirementRegion> retirement_regions;
++  std::unordered_map<hip::Stream*, size_t> open_regions;
++  // Track the actual last submitted segment and its exact owning region. A
++  // consumed earlier export on the same stream does not cover a later tail.
++  struct SubmittedTail { int segment; size_t region; };
++  std::unordered_map<hip::Stream*, SubmittedTail> submitted_tails;
++  size_t submitted_segments = 0;
++  auto sealRegion = [&](size_t index) {
++    auto& region = retirement_regions[index];
++    if (region.sealed) return;
++    region.command->enqueue();
++    if (region.command->graphKernelRetirementFailed() && status == hipSuccess) {
++      status = hipErrorUnknown;
++    }
++    region.sealed = true;
++    auto it = open_regions.find(region.stream);
++    if (it != open_regions.end() && it->second == index) open_regions.erase(it);
++  };
++  if (lane_retire) {
++    retirement_regions.reserve(segments_.size());
++    // This computes exactly the existing mapping before any graph publication.
++    // It is intentionally a measured per-replay cost in this first diagnostic.
++    for (int level = 0; level <= max_dependency_level_; ++level) {
++      auto it = segments_per_level_.find(level);
++      if (it == segments_per_level_.end()) continue;
++      const auto* order = &it->second;
++      if (assignment_device_id_ == launch_stream->DeviceId()) {
++        auto assignment = assignment_segments_per_level_.find(level);
++        if (assignment != assignment_segments_per_level_.end()) order = &assignment->second;
++      }
++      AssignStreamsToSegments(*order, launch_stream, streams, segment_to_stream);
++    }
++    for (const auto& segment : segments_) {
++      for (int producer : segment.segment_ids_dependencies) {
++        if (segment_to_stream.at(producer) != segment_to_stream.at(segment.id)) {
++          exported_segments.insert(producer);
++        }
++      }
++    }
++  }
++
++  if (kernel_retire) {
++    terminal_segments = exported_segments;
++    std::unordered_map<hip::Stream*, int> final_segment;
++    // Match actual enqueue order, not the independently sorted assignment order.
++    for (int level = 0; level <= max_dependency_level_; ++level) {
++      auto it = segments_per_level_.find(level);
++      if (it == segments_per_level_.end()) continue;
++      for (int id : it->second) final_segment[segment_to_stream.at(id)] = id;
++    }
++    for (const auto& tail : final_segment) terminal_segments.insert(tail.second);
++  }
++
++  // Current root batch state is checked every replay (node enable/disable can change).
++  auto rootBatchEligible = [&](int id) {
++    if (!deferred_entry) return false;
++    const auto& segment = segments_[id];
++    auto it = segmentBatches_.find(id);
++    if (segment.nodes.empty() || it == segmentBatches_.end() ||
++        it->second.packet_batches.empty() || it->second.node_capture_status.empty() ||
++        !it->second.node_capture_status.front() ||
++        !segment.nodes.front()->GraphCaptureEnabled()) return false;
++    const auto& batch = it->second.packet_batches.front();
++    return batch.disabledNodeCount == 0 && !batch.dispatchPackets.empty() &&
++        batch.dispatchPackets.size() == batch.dispatchKernelNames.size();
++  };
+ 
+   // Process segments level by level using the pre-calculated max_dependency_level_
+-  for (int level = 0; level <= max_dependency_level_; ++level) {
++  for (int level = 0; level <= max_dependency_level_ && status == hipSuccess; ++level) {
+     auto level_it = segments_per_level_.find(level);
+     if (level_it == segments_per_level_.end()) {
+       continue;
+@@ -1434,13 +1648,76 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+ 
+     const auto& segments_at_level = level_it->second;
+ 
+-    // Assign streams to segments at this level
+-    AssignStreamsToSegments(segments_at_level, launch_stream, streams, segment_to_stream);
++    // Only use the cached policy on the qualified single-device launch path.
++    // Empty streams are also used by child/multi-device paths; preserve those.
++    const std::vector<int>* assignment_order = &segments_at_level;
++    if (!streams.empty() && max_streams_dev_.size() == 1 &&
++        assignment_device_id_ == launch_stream->DeviceId()) {
++      auto assignment_it = assignment_segments_per_level_.find(level);
++      if (assignment_it != assignment_segments_per_level_.end()) {
++        assignment_order = &assignment_it->second;
++      }
++    }
++    if (!lane_retire) {
++      AssignStreamsToSegments(*assignment_order, launch_stream, streams, segment_to_stream);
++    }
++
++    // Graph roots must follow work already queued on the application launch
++    // stream, including copies and memory initialization outside this graph.
++    // Snapshot that frontier before any graph packets, then fork to each distinct
++    // logical side stream. Single-root/all-launch-stream graphs need no fork.
++    if (level == 0 && segments_at_level.size() > 1 &&
++        std::any_of(segments_at_level.begin(), segments_at_level.end(),
++                    [&](int id) { return segment_to_stream.at(id) != launch_stream; })) {
++      constexpr bool kRetainCommand = true;
++      frontier.event = launch_stream->getLastQueuedCommand(kRetainCommand);
++      auto predecessor = frontier.event;
++      if (predecessor != nullptr) {
++        // Finish producer notification before any consumer lock or graph packet.
++        if (deferred_entry && !predecessor->notifyCmdQueue(false)) {
++          if (out_status != nullptr) *out_status = hipErrorOutOfMemory;
++          return nullptr;
++        }
++        auto hardware_event = predecessor->NotifyEvent() != nullptr
++            ? predecessor->NotifyEvent()->HwEvent() : predecessor->HwEvent();
++        if (deferred_entry && hardware_event == nullptr && predecessor->status() != CL_COMPLETE) {
++          if (out_status != nullptr) *out_status = hipErrorUnknown;
++          return nullptr;
++        }
++        amd::Command::EventWaitList entry_wait_list{predecessor};
++        for (int id : segments_at_level) {
++          auto stream = segment_to_stream.at(id);
++          // Reuse the tail map to deduplicate root streams; actual enqueues below
++          // replace these null placeholders with the owning segment's command.
++          bool first_root = stream_last_command_map.emplace(stream, nullptr).second;
++          if (stream != launch_stream && first_root) {
++            if (hardware_event != nullptr && rootBatchEligible(id)) {
++              deferred_entry_streams.insert(stream);
++              continue;
++            }
++            // Use ordinary marker fence/cache scope, as the classic graph fork
++            // does. External producers cannot assume kCacheStateIgnore.
++            auto marker = new amd::Marker(*stream, true, entry_wait_list);
++            marker->enqueue();
++            marker->release();
++          }
++        }
++        // Frontier also stays retained until every deferred root has been visited.
++      }
++    }
+ 
+     // Process each segment at this level
+     for (int segment_id : segments_at_level) {
+       const auto& segment = segments_[segment_id];
+       hip::Stream* current_stream = segment_to_stream[segment_id];
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_QUEUE_EXECUTE graph=%p segment=%d level=%d nodes=%zu "
++                "logical=%llu physical=%llu is_launch=%u\n",
++                static_cast<void*>(this), segment_id, level, segment.nodes.size(),
++                static_cast<unsigned long long>(current_stream->GetStreamId()),
++                static_cast<unsigned long long>(current_stream->getQueueID()),
++                current_stream == launch_stream);
++      }
+ 
+       // Handle dependencies: add wait markers if dependent segments are on different streams
+       // Look up the specific command for each dependency segment
+@@ -1464,70 +1741,130 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+         }
+       }
+ 
+-      // If there are cross-stream dependencies, insert a marker to wait
+-      if (!wait_list.empty()) {
+-        enqueueMarker(current_stream, wait_list);
+-        // Release our retains - marker has its own retain on wait list events
++      // Only an enabled first captured batch can consume a deferred wait.
++      // Disabled/unsupported batches retain the ordinary marker path. This is
++      // structural eligibility, independent of kernel name, size or duration.
++      const bool fuse_dependencies = GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS &&
++          !wait_list.empty() && rootBatchEligible(segment_id) &&
++          !DEBUG_HIP_FORCE_ASYNC_QUEUE &&
++          !current_stream->properties().test(CL_QUEUE_PROFILING_ENABLE);
++      if (fuse_dependencies) {
++        // Match Command::enqueue notification before taking the consumer lock.
+         for (auto* cmd : wait_list) {
+-          cmd->release();
++          if (!cmd->notifyCmdQueue(false)) {
++            status = hipErrorOutOfMemory;
++            break;
++          }
++        }
++        if (status != hipSuccess) {
++          for (auto* cmd : wait_list) cmd->release();
++          break;  // Existing prefix retirement and final join handle submitted work.
+         }
++      } else if (!wait_list.empty()) {
++        enqueueMarker(current_stream, wait_list);
+       }
+ 
+-      // Create accumulate command for this segment
+-      amd::AccumulateCommand* accumulate = new amd::AccumulateCommand(*current_stream, {}, nullptr);
+-
+-      // Enqueue this segment using the helper function
+-      status = EnqueueSegment(segment, current_stream, accumulate);
+-
+-      if (status != hipSuccess) {
+-        accumulate->release();
+-        // Clean up any previously enqueued commands
+-        for (auto& pair : segment_last_command) {
+-          if (pair.second != nullptr) {
+-            pair.second->release();
+-          }
++      size_t region_index = 0;
++      amd::AccumulateCommand* accumulate = nullptr;
++      if (lane_retire) {
++        auto it = open_regions.find(current_stream);
++        if (it == open_regions.end()) {
++          region_index = retirement_regions.size();
++          accumulate = new amd::AccumulateCommand(*current_stream, {}, nullptr);
++          retirement_regions.push_back({current_stream, accumulate, false});
++          open_regions.emplace(current_stream, region_index);
++        } else {
++          region_index = it->second;
++          accumulate = retirement_regions[region_index].command;
+         }
+-        if (out_status != nullptr) {
+-          *out_status = status;
++        assert(!retirement_regions[region_index].sealed);
++      } else {
++        accumulate = new amd::AccumulateCommand(*current_stream, {}, nullptr);
++      }
++      if (deferred_entry_streams.erase(current_stream) != 0) {
++        accumulate->setGraphEntryEvent(frontier.event);
++      }
++      if (fuse_dependencies) accumulate->appendGraphDependencies(wait_list);
++      for (auto* cmd : wait_list) cmd->release();
++      // Register every possibly published region before EnqueueSegment can fail.
++      if (lane_retire) {
++        segment_last_command[segment_id] = accumulate;
++        stream_last_command_map[current_stream] = accumulate;
++        submitted_tails.insert_or_assign(current_stream, SubmittedTail{segment_id, region_index});
++        ++submitted_segments;
++      }
++      status = EnqueueSegment(segment, current_stream, accumulate,
++                              kernel_retire && terminal_segments.count(segment_id) != 0);
++      // Publish a deferred terminal batch now, before moving to another segment
++      // or reporting an injected failure after a supposedly published prefix.
++      if (lane_retire && accumulate->graphRetirementPackets() != nullptr) {
++        sealRegion(region_index);
++      }
++      if (lane_retire) {
++        if (status == hipSuccess && GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER != 0 &&
++            submitted_segments == GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER) {
++          fprintf(stderr, "GRAPH_LANE_INJECTED_FAILURE graph=%p submitted=%zu original_status=0\n",
++                  static_cast<void*>(this), submitted_segments);
++          status = hipErrorUnknown;  // Exercise cleanup of an actually published graph prefix.
++        }
++        if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++          fprintf(stderr, "GRAPH_LANE_SEGMENT graph=%p segment=%d region=%zu logical=%llu "
++                          "exported=%u status=%d\n", static_cast<void*>(this), segment_id,
++                  region_index, static_cast<unsigned long long>(current_stream->GetStreamId()),
++                  exported_segments.count(segment_id) != 0, static_cast<int>(status));
+         }
+-        return nullptr;
++        if (exported_segments.count(segment_id) != 0 || status != hipSuccess) {
++          sealRegion(region_index);
++        }
++      } else {
++        // Preserve ordinary-path publication/bookkeeping order for the off control.
++        accumulate->enqueue();
++        segment_last_command[segment_id] = accumulate;
++        stream_last_command_map[current_stream] = accumulate;
+       }
+-
+-      // Do not release as this is released at the end
+-      accumulate->enqueue();
+-
+-      segment_last_command[segment_id] = accumulate;
+-    }
+-  }
+-
+-  // Synchronize all streams with work back to launch_stream
+-  // Build a map of stream to last command by collecting from the highest-level segment on each
+-  // stream This is critical because unordered_map iteration order is undefined, so we must
+-  // explicitly track dependency levels to ensure we wait on the last command (highest level) on
+-  // each stream
+-  std::unordered_map<hip::Stream*, amd::Command*> stream_last_command_map;
+-  std::unordered_map<hip::Stream*, int> stream_max_level; // Track max dependency level per stream
+-
+-  for (const auto& pair : segment_last_command) {
+-    int seg_id = pair.first;
+-    amd::Command* cmd = pair.second;
+-    auto stream_it = segment_to_stream.find(seg_id);
+-    if (stream_it != segment_to_stream.end()) {
+-      hip::Stream* stream = stream_it->second;
+-      int seg_dependency_level = segments_[seg_id].dependency_level;
+-
+-      // Only update if this segment is at a strictly higher level
+-      // Using strict > ensures deterministic behavior when multiple segments
+-      // are at the same level on the same stream
+-      auto level_it = stream_max_level.find(stream);
+-      if (level_it == stream_max_level.end() ||
+-          seg_dependency_level > level_it->second) {
+-        stream_max_level[stream] = seg_dependency_level;
+-        stream_last_command_map[stream] = cmd;
++      if (status != hipSuccess) break;
++    }
++  }
++
++  // Success and failure both retire every open prefix before the unchanged join.
++  if (lane_retire) {
++    for (size_t i = 0; i < retirement_regions.size(); ++i) sealRegion(i);
++    assert(open_regions.empty());
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_LANE_RETIRE graph=%p regions=%zu segments=%zu exports=%zu status=%d\n",
++              static_cast<void*>(this), retirement_regions.size(), submitted_segments,
++              exported_segments.size(), static_cast<int>(status));
++    }
++  }
++
++  // Compute coverage in both toggle arms so the same-byte contrast changes only
++  // the final wait selection. Failure cleanup never uses unsubmitted consumers.
++  // Record one explicit dependency path from each ancestor to the actual launch
++  // tail. Do not infer coverage from queue order or a shared command alias.
++  int launch_tail_segment = -1;
++  std::unordered_map<int, int> next_toward_launch;
++  const bool complete_lane_graph = lane_retire && status == hipSuccess &&
++      submitted_segments == segments_.size();
++  if (complete_lane_graph) {
++    auto launch_tail = submitted_tails.find(launch_stream);
++    if (launch_tail != submitted_tails.end()) {
++      launch_tail_segment = launch_tail->second.segment;
++      std::vector<int> pending{launch_tail_segment};
++      while (!pending.empty()) {
++        int consumer = pending.back();
++        pending.pop_back();
++        for (int producer : segments_[consumer].segment_ids_dependencies) {
++          if (next_toward_launch.emplace(producer, consumer).second) pending.push_back(producer);
++        }
+       }
+     }
+   }
++  size_t final_side_count = 0;
++  size_t omitted_side_count = 0;
+ 
++  // Join the actual last submitted segment on every logical stream. Dependency
++  // level alone cannot identify the tail when several segments share that level.
++  // Aliases remain alive through the per-segment or unique-region owners.
+   amd::Command::EventWaitList final_wait_list;
+   for (const auto& pair : stream_last_command_map) {
+     hip::Stream* stream = pair.first;
+@@ -1535,6 +1872,37 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+ 
+     // Sync all streams except the launch_stream itself
+     if (stream != launch_stream && last_cmd != nullptr) {
++      ++final_side_count;
++      auto tail = submitted_tails.find(stream);
++      const bool exact_region = lane_retire && tail != submitted_tails.end() &&
++          tail->second.region < retirement_regions.size() &&
++          retirement_regions[tail->second.region].sealed &&
++          retirement_regions[tail->second.region].stream == stream &&
++          retirement_regions[tail->second.region].command == last_cmd;
++      const bool covered = complete_lane_graph && exact_region &&
++          next_toward_launch.count(tail->second.segment) != 0;
++      const bool omit = GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL && covered;
++      if (lane_retire && GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_COVERED_TAIL graph=%p logical=%llu tail=%d region=%lld "
++                        "launch_tail=%d exact=%u covered=%u omitted=%u status=%d path=",
++                static_cast<void*>(this), static_cast<unsigned long long>(stream->GetStreamId()),
++                tail == submitted_tails.end() ? -1 : tail->second.segment,
++                tail == submitted_tails.end() ? -1LL : static_cast<long long>(tail->second.region),
++                launch_tail_segment, exact_region, covered, omit, static_cast<int>(status));
++        if (covered) {
++          int node = tail->second.segment;
++          fprintf(stderr, "%d", node);
++          while (node != launch_tail_segment) {
++            node = next_toward_launch.at(node);
++            fprintf(stderr, ",%d", node);
++          }
++        } else { fprintf(stderr, "none"); }
++        fprintf(stderr, "\n");
++      }
++      if (omit) {
++        ++omitted_side_count;
++        continue;
++      }
+       // Retain commands before adding to wait list since marker will retain them
+       // and we'll release them later in cleanup
+       last_cmd->retain();
+@@ -1542,9 +1910,27 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+     }
+   }
+ 
++  if (lane_retire && GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_FINAL_JOIN graph=%p side_tails=%zu omitted=%zu retained=%zu "
++                    "marker=%u complete=%u enabled=%u status=%d\n",
++            static_cast<void*>(this), final_side_count, omitted_side_count, final_wait_list.size(),
++            !final_wait_list.empty(), complete_lane_graph, GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL,
++            static_cast<int>(status));
++  }
+   // If there are other streams with work, sync them back to launch_stream
+   if (!final_wait_list.empty()) {
+-    enqueueMarker(launch_stream, final_wait_list);
++    if (completion_marker != nullptr && status == hipSuccess) {
++      // Run registered the graph-release callback before publishing any graph
++      // work. The not-yet-enqueued marker owns these exact side-tail references.
++      completion_marker->updateEventWaitList(final_wait_list);
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_FINAL_FUSED graph=%p waits=%zu\n",
++                static_cast<void*>(this), final_wait_list.size());
++      }
++    } else {
++      // Child graphs and all failed prefixes preserve immediate ordinary joins.
++      enqueueMarker(launch_stream, final_wait_list);
++    }
+   }
+ 
+   // Release the extra retains for commands in final_wait_list
+@@ -1555,27 +1941,28 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+     }
+   }
+ 
+-  // Get the last command enqueued on the launch_stream for parent dependency tracking
+-  // This is to prevent release in cleanup loop, this determines graph execution completion
++  // Transfer one owning launch-tail reference on success. Segment and tail maps
++  // may alias a shared region; only the region vector owns those commands.
+   amd::Command* last_command = nullptr;
+   auto launch_stream_it = stream_last_command_map.find(launch_stream);
+-  if (launch_stream_it != stream_last_command_map.end()) {
++  if (status == hipSuccess && launch_stream_it != stream_last_command_map.end()) {
+     last_command = launch_stream_it->second;
+-    // Find the segment that produced this command and remove it from cleanup
+-    for (auto it = segment_last_command.begin(); it != segment_last_command.end(); ) {
+-      if (it->second == last_command) {
+-        it = segment_last_command.erase(it);
+-        break;
+-      } else {
+-        ++it;
++  }
++  if (lane_retire) {
++    for (auto& region : retirement_regions) {
++      if (region.command != last_command) region.command->release();
++    }
++  } else {
++    if (last_command != nullptr) {
++      for (auto it = segment_last_command.begin(); it != segment_last_command.end(); ++it) {
++        if (it->second == last_command) {
++          segment_last_command.erase(it);
++          break;
++        }
+       }
+     }
+-  }
+-
+-  // Release all other enqueued accumulate commands
+-  for (auto& pair : segment_last_command) {
+-    if (pair.second != nullptr) {
+-      pair.second->release();
++    for (auto& pair : segment_last_command) {
++      if (pair.second != nullptr) pair.second->release();
+     }
+   }
+ 
+@@ -1588,7 +1975,7 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
+ // ================================================================================================
+ // Graph segment to queue dispatch matching
+ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream,
+-                                     amd::AccumulateCommand* accumulate) {
++                                     amd::AccumulateCommand* accumulate, bool terminal_region) {
+   hipError_t status = hipSuccess;
+ 
+   // Find the SegmentBatch for this segment using O(1) map lookup
+@@ -1671,6 +2058,9 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
+ 
+         // Dispatch the selected batch
+         if (!packetsToDispatch->empty()) {
++          if (terminal_region && i + packetBatch.nodeRanges.size() == segment.nodes.size()) {
++            accumulate->requestGraphKernelRetirement();
++          }
+           bool batchStatus = stream->vdev()->dispatchAqlPacketBatch(
+               *packetsToDispatch, *kernelNamesToDispatch, accumulate);
+           if (!batchStatus) {
+@@ -1694,14 +2084,44 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
+ }
+ 
+ // ================================================================================================
++bool GraphExec::CanCoalesce(hip::Stream* launch_stream) const {
++  return GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE && use_segment_scheduling_ &&
++      instantiateDeviceId_ == launch_stream->DeviceId() &&
++      max_streams_dev_.size() == 1 &&
++      entry_fused_device_id_ == launch_stream->DeviceId();
++}
++
+ void GraphExec::UpdateStreams(hip::Stream* launch_stream) {
++  streams_coalesced_ = false;
+   int devId = launch_stream->vdev()->device().index();
+   // Clear any previous stream assignments
+   streams_.clear();
+   // Current stream is the default in the assignment
+   streams_.push_back(launch_stream);
++  // Diagnostic only: keep graph topology and segment submission order, but use
++  // one logical stream. A physical queue cap alone retains logical dependency
++  // markers and is not an equivalent intervention. Eligibility excludes child,
++  // multi-device and non-kernel graphs; no workload names or shapes are tested.
++  if (CanCoalesce(launch_stream)) {
++    streams_coalesced_ = true;
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_LOGICAL_COALESCE graph=%p enabled=1 selected=1 logical=%llu physical=%llu\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(launch_stream->GetStreamId()),
++              static_cast<unsigned long long>(launch_stream->getQueueID()));
++    }
++    return;
++  }
++
+   if (parallel_streams_.find(devId) == parallel_streams_.end()) {
+     LogPrintfError("UpdateStreams failed for device id:%d", devId);
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_QUEUE_SELECTION graph=%p spare=%u max_streams=%d selected=1 launch=%llu\n",
++              static_cast<void*>(this), GPU_GRAPH_DIAGNOSTIC_SPARE, max_streams_,
++              static_cast<unsigned long long>(launch_stream->getQueueID()));
++      fprintf(stderr, "GRAPH_QUEUE_SELECTED graph=%p index=0 logical=%llu physical=%llu is_launch=1\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(launch_stream->GetStreamId()),
++              static_cast<unsigned long long>(launch_stream->getQueueID()));
++    }
+     return;
+   }
+   auto parallel_streams = parallel_streams_[devId];
+@@ -1722,6 +2142,18 @@ void GraphExec::UpdateStreams(hip::Stream* launch_stream) {
+   for (int i = streams_.size(), j = 0; i < max_streams_ && j < collided_streams.size(); i++, j++) {
+     streams_.push_back(collided_streams[j]);
+   }
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_QUEUE_SELECTION graph=%p spare=%u max_streams=%d selected=%zu launch=%llu\n",
++            static_cast<void*>(this), GPU_GRAPH_DIAGNOSTIC_SPARE, max_streams_, streams_.size(),
++            static_cast<unsigned long long>(launch_stream->getQueueID()));
++    for (size_t index = 0; index < streams_.size(); ++index) {
++      auto* stream = streams_[index];
++      fprintf(stderr, "GRAPH_QUEUE_SELECTED graph=%p index=%zu logical=%llu physical=%llu is_launch=%u\n",
++              static_cast<void*>(this), index, static_cast<unsigned long long>(stream->GetStreamId()),
++              static_cast<unsigned long long>(stream->getQueueID()), stream == launch_stream);
++    }
++  }
++
+ }
+ 
+ 
+@@ -1894,11 +2326,389 @@ bool Graph::RunNodes(int32_t base_stream, const std::vector<hip::Stream*>* paral
+   return true;
+ }
+ 
++bool GraphExec::CanUseGraphSignals(hip::Stream* launch_stream,
++                                  std::unordered_map<int, hip::Stream*>& assignment) {
++  if ((!GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS && !GPU_GRAPH_DIAGNOSTIC_FRONTIER) ||
++      !amd::IS_HIP || !AMD_DIRECT_DISPATCH ||
++      DEBUG_HIP_FORCE_ASYNC_QUEUE || !use_segment_scheduling_ || streams_coalesced_ ||
++      max_streams_dev_.size() != 1 || instantiateDeviceId_ != launch_stream->DeviceId() ||
++      entry_fused_device_id_ != launch_stream->DeviceId() || streams_.size() < 2 ||
++      segments_.empty() || HasHiddenHeap() || amd::Agent::shouldPostEventEvents() ||
++      amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) ||
++      amd::activity_prof::IsEnabled(::OP_ID_COPY) ||
++      amd::activity_prof::IsEnabled(::OP_ID_BARRIER)) return false;
++  std::unordered_set<uint64_t> physical;
++  for (auto* stream : streams_) {
++    if (stream->DeviceId() != launch_stream->DeviceId() ||
++        stream->properties().test(CL_QUEUE_PROFILING_ENABLE)) return false;
++    physical.insert(stream->getQueueID());
++  }
++  if (physical.size() < 2) return false;
++  for (const auto& segment : segments_) {
++    if (segment.child_graph_ptr != nullptr || segment.nodes.empty() || segment.id < 0 ||
++        static_cast<size_t>(segment.id) >= segments_.size()) return false;
++    for (auto* node : segment.nodes) {
++      if (node->GetType() != hipGraphNodeTypeKernel || !node->GraphCaptureEnabled() ||
++          node->GetDeviceId() != launch_stream->DeviceId()) return false;
++    }
++    auto it = segmentBatches_.find(segment.id);
++    if (it == segmentBatches_.end() || it->second.packet_batches.size() != 1 ||
++        it->second.node_capture_status.size() != segment.nodes.size() ||
++        !std::all_of(it->second.node_capture_status.begin(), it->second.node_capture_status.end(),
++                     [](bool captured) { return captured; })) return false;
++    const auto& batch = it->second.packet_batches.front();
++    if (batch.disabledNodeCount != 0 || batch.nodeRanges.size() != segment.nodes.size() ||
++        batch.dispatchPackets.size() != batch.dispatchKernelNames.size() ||
++        !launch_stream->vdev()->graphSignalPacketsEligible(batch.dispatchPackets)) return false;
++  }
++  for (int level = 0; level <= max_dependency_level_; ++level) {
++    auto it = segments_per_level_.find(level);
++    if (it == segments_per_level_.end()) continue;
++    const auto* order = &it->second;
++    if (assignment_device_id_ == launch_stream->DeviceId()) {
++      auto placed = assignment_segments_per_level_.find(level);
++      if (placed != assignment_segments_per_level_.end()) order = &placed->second;
++    }
++    AssignStreamsToSegments(*order, launch_stream, streams_, assignment);
++  }
++  if (assignment.size() != segments_.size()) return false;
++  for (const auto& segment : segments_) {
++    if (assignment.count(segment.id) == 0) return false;
++    for (int predecessor : segment.segment_ids_dependencies) {
++      if (assignment.count(predecessor) == 0) return false;
++    }
++  }
++  // The private final join is a real token consumer even when the two root
++  // branches have no internal edge (the original-sized Hassan graph).
++  if (GPU_GRAPH_DIAGNOSTIC_FRONTIER) return launch_stream->vdev()->supportsGraphFrontier();
++  // No internal cross-queue dependency means no GPU token consumer. Keep the
++  // established path; creating/resetting tokens would perform no useful work.
++  for (const auto& segment : segments_) {
++    for (int predecessor : segment.segment_ids_dependencies) {
++      if (assignment.at(predecessor)->getQueueID() != assignment.at(segment.id)->getQueueID()) {
++        return true;
++      }
++    }
++  }
++  return false;
++}
++
++GraphExec::GraphSignalGeneration* GraphExec::AcquireGraphSignalGeneration(hip::Stream* stream,
++                                                                        size_t count) {
++  if (count == 0) count = segments_.size();
++  {
++    std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++    for (auto& generation : graph_signal_generations_) {
++      if (!generation->busy && !generation->quarantined &&
++          generation->arena->handles.size() == count) {
++        generation->busy = true;
++        return generation.get();
++      }
++    }
++  }
++  // Creation can call the driver; never block completion callbacks on it.
++  auto generation = std::make_unique<GraphSignalGeneration>();
++  generation->arena = stream->vdev()->createGraphSignalArena(
++      count, !GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST);
++  if (!generation->arena) return nullptr;
++  generation->busy = true;
++  auto* result = generation.get();
++  {
++    std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++    graph_signal_generations_.push_back(std::move(generation));
++  }
++  return result;
++}
++
++void GraphExec::ReleaseGraphSignalLaunch(cl_event event, cl_int status, void* data) {
++  auto* context = static_cast<GraphSignalLaunch*>(data);
++  auto* graph = context->graph;
++  const bool completed = status == CL_COMPLETE;
++  {
++    std::lock_guard<std::mutex> lock(graph->graph_signal_pool_mutex_);
++    context->generation->quarantined = !completed;
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      // Untimed audit receipt must precede any reuse/BEGIN on another CPU thread.
++      fprintf(stderr, "GRAPH_LOCAL_COMPLETE graph=%p serial=%llu generation=%p status=%d recycled=%u\n",
++              static_cast<void*>(graph), static_cast<unsigned long long>(context->serial),
++              static_cast<void*>(context->generation), status, completed);
++    }
++    if (completed) context->generation->busy = false;
++  }
++  delete context;
++  // A failed asynchronous retirement is not proof of GPU drainage. Preserve the
++  // graph/arena rather than recycle or destroy storage that may still be read.
++  if (completed) graph->release();
++}
++
++hipError_t GraphExec::RunGraphSignals(hip::Stream* launch_stream,
++                                    const std::unordered_map<int, hip::Stream*>& assignment) {
++  hipError_t status = hipSuccess;
++  auto* generation = AcquireGraphSignalGeneration(launch_stream);
++  if (generation == nullptr) return hipErrorOutOfMemory;  // Nothing published.
++  auto* context = new GraphSignalLaunch{this, generation, ++graph_signal_launch_serial_};
++  auto* final = new amd::Marker(*launch_stream, kMarkerDisableFlush, {});
++  final->setCommandEntryScope(amd::Device::kCacheStateIgnore);
++  this->retain();
++  if (!final->event().setCallback(CL_COMPLETE, ReleaseGraphSignalLaunch, context, false)) {
++    {
++      std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++      generation->busy = false;
++    }
++    delete context;
++    final->release();
++    this->release();
++    return hipErrorInvalidHandle;
++  }
++
++  // Construct ordinary per-logical-stream retirement before publication.
++  // These commands never export the local dependency tokens as HwEvents.
++  std::unordered_map<hip::Stream*, amd::AccumulateCommand*> lanes;
++  for (auto& pair : assignment) {
++    if (lanes.count(pair.second) == 0) {
++      lanes.emplace(pair.second, new amd::AccumulateCommand(*pair.second, {}, nullptr));
++    }
++  }
++  auto* reset = new amd::AccumulateCommand(*launch_stream, {}, nullptr);
++  const uint64_t serial = context->serial;
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_BEGIN graph=%p serial=%llu generation=%p tokens=%zu lanes=%zu\n",
++            static_cast<void*>(this), static_cast<unsigned long long>(serial),
++            static_cast<void*>(generation), generation->arena->handles.size(), lanes.size());
++  }
++  // From here every exit retires the published prefix through final's callback.
++  bool reset_ok = launch_stream->vdev()->resetGraphSignalArena(*generation->arena, *reset);
++  reset->enqueue();
++  if (!reset_ok || !reset->notifyCmdQueue(false)) status = hipErrorUnknown;
++  if (status == hipSuccess) {
++    auto* event = reset->NotifyEvent() != nullptr ? reset->NotifyEvent() : reset;
++    if (event->HwEvent() == nullptr && reset->status() != CL_COMPLETE) status = hipErrorUnknown;
++  }
++  std::unordered_set<hip::Stream*> touched;
++  size_t submitted = 0;
++  for (int level = 0; level <= max_dependency_level_ && status == hipSuccess; ++level) {
++    auto it = segments_per_level_.find(level);
++    if (it == segments_per_level_.end()) continue;
++    for (int id : it->second) {
++      const auto& segment = segments_[id];
++      auto* stream = assignment.at(id);
++      auto* command = lanes.at(stream);
++      if (touched.insert(stream).second) command->setGraphEntryEvent(reset);
++      std::vector<uint64_t> waits;
++      for (int predecessor : segment.segment_ids_dependencies) {
++        if (assignment.at(predecessor)->getQueueID() != stream->getQueueID()) {
++          waits.push_back(generation->arena->handles.at(predecessor));
++        }
++      }
++      auto& batch = segmentBatches_.at(id).packet_batches.front();
++      bool ok = stream->vdev()->dispatchGraphSignalPacketBatch(batch.dispatchPackets,
++          batch.dispatchKernelNames, command, waits, generation->arena->handles.at(id));
++      ++submitted;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_LOCAL_SEGMENT graph=%p serial=%llu segment=%d logical=%llu physical=%llu waits=%zu status=%u\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial), id,
++                static_cast<unsigned long long>(stream->GetStreamId()),
++                static_cast<unsigned long long>(stream->getQueueID()), waits.size(), ok);
++      }
++      if (!ok || (GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER != 0 &&
++                  submitted == GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER)) {
++        status = hipErrorUnknown;
++        break;
++      }
++    }
++  }
++
++  // Seal every possibly published logical lane, including a failing batch.
++  amd::Command::EventWaitList final_waits;
++  for (auto& lane : lanes) {
++    if (touched.count(lane.first) != 0) {
++      lane.second->enqueue();
++      if (lane.first != launch_stream) final_waits.push_back(lane.second);
++    }
++  }
++  // No covered-tail omission: these ordinary events retire all host batches and
++  // every possible token reader, including partial-publication failures.
++  final->updateEventWaitList(final_waits);
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_RETIRE graph=%p serial=%llu submitted=%zu lanes=%zu side_waits=%zu status=%d\n",
++            static_cast<void*>(this), static_cast<unsigned long long>(serial), submitted,
++            touched.size(), final_waits.size(), static_cast<int>(status));
++  }
++  final->enqueue();  // Callback owns generation+GraphExec until this GPU join completes.
++  final->release();
++  reset->release();
++  for (auto& lane : lanes) lane.second->release();
++  return status;
++}
++
++hipError_t GraphExec::RunGraphFrontier(hip::Stream* launch_stream,
++    const std::unordered_map<int, hip::Stream*>& assignment) {
++  using Batch = amd::device::VirtualDevice::GraphFrontierBatch;
++  struct SegmentPlan {
++    hip::Stream* stream;
++    int id;
++    std::unique_ptr<Batch> packets;
++    std::unique_ptr<Batch> prefix_join;
++  };
++  // GraphExec serialization protects assignment/templates; canonical vdev lock
++  // order also permits concurrent launch/observe on the public launch stream.
++  std::vector<amd::Monitor*> locks{&launch_stream->vdev()->execution()};
++  for (const auto& pair : assignment) locks.push_back(&pair.second->vdev()->execution());
++  std::sort(locks.begin(), locks.end(), std::less<amd::Monitor*>());
++  locks.erase(std::unique(locks.begin(), locks.end()), locks.end());
++
++  auto* generation = AcquireGraphSignalGeneration(launch_stream, segments_.size() + 2);
++  if (generation == nullptr) return hipErrorOutOfMemory;
++  const uint64_t serial = ++graph_signal_launch_serial_;
++  const uint64_t entry = generation->arena->handles.at(segments_.size());
++  const uint64_t frontier = generation->arena->handles.at(segments_.size() + 1);
++  retain();
++  auto release_owner = [this, generation, serial](bool safe) {
++    {
++      std::lock_guard<std::mutex> lock(graph_signal_pool_mutex_);
++      generation->quarantined = !safe;
++      if (safe) generation->busy = false;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_FRONTIER_RELEASE graph=%p serial=%llu generation=%p recycled=%u\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial),
++                static_cast<void*>(generation), safe);
++      }
++    }
++    // A failed completion deliberately preserves graph/arena ownership.
++    if (safe) release();
++  };
++  auto* command = new amd::GraphFrontierCommand(*launch_stream, frontier, release_owner);
++  if (!command->initialize()) {
++    command->release();
++    return hipErrorOutOfMemory;
++  }
++
++  // Notification can enqueue and take notify_lock. It must stay outside every
++  // execution lock. Retained pointers prevent ABA while the tail is validated.
++  for (;;) {
++    auto* snapshot = launch_stream->getLastQueuedCommand(true);
++    amd::Event* predecessor = snapshot;
++    void* ordinary_hw_event = nullptr;
++    const bool chained = snapshot != nullptr && snapshot->graphFrontier() != 0;
++    if (snapshot != nullptr && !chained) {
++      if (!snapshot->notifyCmdQueue(false)) {
++        snapshot->release(); command->release(); return hipErrorUnknown;
++      }
++      if (snapshot->NotifyEvent() != nullptr) predecessor = snapshot->NotifyEvent();
++      ordinary_hw_event = predecessor->HwEvent();
++      if (ordinary_hw_event == nullptr && predecessor->status() != CL_COMPLETE) {
++        snapshot->release(); command->release(); return hipErrorUnknown;
++      }
++    }
++    std::vector<std::unique_lock<amd::Monitor>> guards;
++    guards.reserve(locks.size());
++    for (auto* lock : locks) guards.emplace_back(*lock);
++    // notifyCmdQueue can intentionally advance P -> notification marker M.
++    // Accept that exact M; an intervening later submit requires a new snapshot.
++    if (launch_stream->getLastQueuedCommand(false) != predecessor) {
++      guards.clear();
++      if (snapshot != nullptr) snapshot->release();
++      continue;
++    }
++
++    const uint64_t launch_queue = launch_stream->getQueueID();
++    const uint64_t entry_dependency = chained ? snapshot->graphFrontier() : entry;
++    std::unordered_map<uint64_t, uint64_t> tails;
++    std::vector<SegmentPlan> plans;
++    plans.reserve(segments_.size());
++    auto entry_plan = launch_stream->vdev()->prepareGraphFrontierJoin({}, entry, false);
++    auto empty_join = launch_stream->vdev()->prepareGraphFrontierJoin({}, frontier, true);
++    bool prepared = entry_plan != nullptr && empty_join != nullptr;
++    std::unordered_set<int> published_order;
++    for (int level = 0; level <= max_dependency_level_ && prepared; ++level) {
++      auto level_it = segments_per_level_.find(level);
++      if (level_it == segments_per_level_.end()) continue;
++      for (int id : level_it->second) {
++        auto* stream = assignment.at(id);
++        const uint64_t queue = stream->getQueueID();
++        const bool first = tails.count(queue) == 0;
++        std::vector<uint64_t> dependencies;
++        if (first && queue != launch_queue) dependencies.push_back(entry_dependency);
++        for (int dep : segments_[id].segment_ids_dependencies) {
++          if (published_order.count(dep) == 0) { prepared = false; break; }
++          if (assignment.at(dep)->getQueueID() != queue) {
++            dependencies.push_back(generation->arena->handles.at(dep));
++          }
++        }
++        if (!prepared) break;
++        const auto& batch = segmentBatches_.at(id).packet_batches.front();
++        auto packets = stream->vdev()->prepareGraphFrontierKernels(batch.dispatchPackets,
++            dependencies, generation->arena->handles.at(id), first);
++        tails[queue] = generation->arena->handles.at(id);
++        std::vector<uint64_t> terminal;
++        terminal.reserve(tails.size());
++        for (const auto& tail : tails) terminal.push_back(tail.second);
++        auto join = launch_stream->vdev()->prepareGraphFrontierJoin(terminal, frontier, true);
++        if (packets == nullptr || join == nullptr) { prepared = false; break; }
++        plans.push_back({stream, id, std::move(packets), std::move(join)});
++        published_order.insert(id);
++      }
++    }
++    if (!prepared || plans.size() != segments_.size() ||
++        !launch_stream->vdev()->resetGraphSignalArenaCpu(*generation->arena)) {
++      guards.clear();
++      if (snapshot != nullptr) snapshot->release();
++      command->release();
++      return hipErrorUnknown;  // No packet of this launch was published.
++    }
++    command->setPredecessor(predecessor);
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_FRONTIER_BEGIN graph=%p serial=%llu generation=%p segments=%zu lanes=%zu chained=%u frontier=%llu\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(serial),
++              static_cast<void*>(generation), plans.size(), tails.size(), chained,
++              static_cast<unsigned long long>(frontier));
++    }
++    // From here every exit publishes a prebuilt all-touched-lane join and enters
++    // the normal host batch. No resource allocation is needed by the raw backend.
++    command->markPublished();
++    if (!chained) {
++      launch_stream->vdev()->importGraphFrontierPredecessor(ordinary_hw_event);
++      launch_stream->vdev()->publishGraphFrontierBatch(*entry_plan);
++    }
++    size_t submitted = 0;
++    hipError_t result = hipSuccess;
++    for (const auto& plan : plans) {
++      plan.stream->vdev()->publishGraphFrontierBatch(*plan.packets);
++      ++submitted;
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++        fprintf(stderr, "GRAPH_FRONTIER_SEGMENT graph=%p serial=%llu segment=%d physical=%llu\n",
++                static_cast<void*>(this), static_cast<unsigned long long>(serial), plan.id,
++                static_cast<unsigned long long>(plan.stream->getQueueID()));
++      }
++      if (GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER != 0 &&
++          submitted == GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER) {
++        result = hipErrorUnknown;
++        break;
++      }
++    }
++    launch_stream->vdev()->publishGraphFrontierBatch(
++        submitted == 0 ? *empty_join : *plans.at(submitted - 1).prefix_join);
++    command->enqueue();  // Same execution-lock transition as packet publication.
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_FRONTIER_END graph=%p serial=%llu submitted=%zu status=%d\n",
++              static_cast<void*>(this), static_cast<unsigned long long>(serial), submitted,
++              static_cast<int>(result));
++    }
++    guards.clear();
++    if (snapshot != nullptr) snapshot->release();
++    command->release();
++    return result;
++  }
++}
++
+ hipError_t ihipGraphDebugDotPrint(hip::Graph* graph, const char* path, unsigned int flags);
+ 
+ // ================================================================================================
+ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
++  std::unique_lock<std::mutex> lowering_lock(graph_signal_launch_mutex_, std::defer_lock);
++  if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS || GPU_GRAPH_DIAGNOSTIC_FRONTIER) lowering_lock.lock();
+   hipError_t status = hipSuccess;
++  amd::Marker* fused_completion_marker = nullptr;
+ 
+   // Get the first node based on scheduling mode
+   Node firstNode = nullptr;
+@@ -1944,14 +2754,46 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+       initialized = true;
+     }
+     // Update streams for the graph execution only if launch stream changed
+-    if (lastLaunchStream_ != launch_stream) {
++    if (lastLaunchStream_ != launch_stream ||
++        streams_coalesced_ != CanCoalesce(launch_stream)) {
+       UpdateStreams(launch_stream);
+       lastLaunchStream_ = launch_stream;
+     }
++    std::unordered_map<int, hip::Stream*> local_signal_assignment;
++    if (CanUseGraphSignals(launch_stream, local_signal_assignment)) {
++      return GPU_GRAPH_DIAGNOSTIC_FRONTIER
++          ? RunGraphFrontier(launch_stream, local_signal_assignment)
++          : RunGraphSignals(launch_stream, local_signal_assignment);
++    }
++    if (GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS && GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_LOCAL_FALLBACK graph=%p segments=%zu streams=%zu\n",
++              static_cast<void*>(this), segments_.size(), streams_.size());
++    }
++    const bool fuse_final = GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL &&
++        amd::IS_HIP && AMD_DIRECT_DISPATCH && !DEBUG_HIP_FORCE_ASYNC_QUEUE &&
++        !streams_.empty() && max_streams_dev_.size() == 1 &&
++        entry_fused_device_id_ == launch_stream->DeviceId() &&
++        !launch_stream->properties().test(CL_QUEUE_PROFILING_ENABLE) &&
++        !amd::Agent::shouldPostEventEvents() &&
++        !amd::activity_prof::IsEnabled(::OP_ID_DISPATCH) &&
++        !amd::activity_prof::IsEnabled(::OP_ID_COPY) &&
++        !amd::activity_prof::IsEnabled(::OP_ID_BARRIER);
++    if (fuse_final) {
++      this->retain();
++      fused_completion_marker = new amd::Marker(*launch_stream, kMarkerDisableFlush, {});
++      fused_completion_marker->setCommandEntryScope(amd::Device::kCacheStateIgnore);
++      if (!fused_completion_marker->event().setCallback(
++              CL_COMPLETE, GraphExec::DecrementRefCount, this, false)) {
++        this->release();
++        fused_completion_marker->release();
++        return hipErrorInvalidHandle;  // No graph packets have been published.
++      }
++    }
+     amd::Command* last_cmd = nullptr;
+     if (max_streams_dev_.size() == 1) {
+       // Single-device: pass collision-handled streams_ to EnqueueSegmentedGraph
+-      last_cmd = EnqueueSegmentedGraph(launch_stream, streams_, &status);
++      last_cmd = EnqueueSegmentedGraph(launch_stream, streams_, &status,
++                                      fused_completion_marker);
+     } else {
+       // Multi-device: pass empty vector, will use parallel_streams_ internally
+       last_cmd = EnqueueSegmentedGraph(launch_stream, {}, &status);
+@@ -1979,7 +2821,8 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+     }
+   } else {
+     // Update streams for the graph execution only if launch stream changed
+-    if (lastLaunchStream_ != launch_stream) {
++    if (lastLaunchStream_ != launch_stream ||
++        streams_coalesced_ != CanCoalesce(launch_stream)) {
+       UpdateStreams(launch_stream);
+       lastLaunchStream_ = launch_stream;
+     }
+@@ -1989,6 +2832,11 @@ hipError_t GraphExec::Run(hip::Stream* launch_stream) {
+       return hipErrorOutOfMemory;
+     }
+   }
++  if (fused_completion_marker != nullptr) {
++    fused_completion_marker->enqueue();
++    fused_completion_marker->release();
++    return status;
++  }
+   this->retain();
+   amd::Command* CallbackCommand = new amd::Marker(*launch_stream, kMarkerDisableFlush, {});
+   // we may not need to flush any caches.
+diff --git a/hipamd/src/hip_graph_internal.hpp b/hipamd/src/hip_graph_internal.hpp
+index df19f80..de78611 100644
+--- a/hipamd/src/hip_graph_internal.hpp
++++ b/hipamd/src/hip_graph_internal.hpp
+@@ -21,6 +21,8 @@
+ #pragma once
+ #include <algorithm>
+ #include <queue>
++#include <mutex>
++#include <memory>
+ #include <stack>
+ #include <iostream>
+ #include <unordered_map>
+@@ -454,7 +456,7 @@ class GraphNode : public hipGraphNodeDOTAttribute {
+     out << "\"";
+     out << "];";
+   }
+-  void SetDeviceId(int id) { dev_id_ = id; }
++  void SetDeviceId(int id);
+   int GetDeviceId() const { return dev_id_; }
+ 
+  protected:
+@@ -709,6 +711,18 @@ class Graph {
+   //! Calculate dependency levels for segments using topological sort
+   void CalculateSegmentTopoDependencyLevels();
+ 
++  // A setter can change device metadata even when later validation fails.
++  // Disable cached placement in O(1); rescheduling/destruction releases storage.
++  void InvalidateNodeCountPlacementForDevice(int device_id) {
++    if (assignment_device_id_ >= 0 && assignment_device_id_ != device_id) {
++      assignment_device_id_ = -1;
++    }
++    if (entry_fused_device_id_ >= 0 && entry_fused_device_id_ != device_id) {
++      entry_fused_device_id_ = -1;
++    }
++  }
++
++
+   //! Runs one node on the assigned stream
+   bool RunOneNode(Node node,  //!< Node for the execution on GPU
+                   bool wait   //!< Wait dependencies
+@@ -837,11 +851,17 @@ class Graph {
+   int max_dependency_level_ = -1;
+   //!< Map of dependency level to list of segment IDs at that level
+   std::unordered_map<int, std::vector<int>> segments_per_level_;
++  //!< Cached assignment only; segments_per_level_ retains the enqueue order.
++  std::unordered_map<int, std::vector<int>> assignment_segments_per_level_;
++  int assignment_device_id_ = -1;
++  int entry_fused_device_id_ = -1;  // Cached flat kernel-only eligibility.
++
+ 
+   std::unordered_map<Node, Node> clonedNodes_;
+ 
+  private:
+   friend class GraphExec;
++  friend struct GraphPlacementTestAccess;  // Untimed internal qualification fixture.
+   std::vector<Node> vertices_;
+   const Graph* pOriginalGraph_ = nullptr;
+   //!< graphUserObj_.second stores refcount owned by this graph for user object,
+@@ -884,6 +904,15 @@ class Graph {
+   std::vector<Batch> batches_;
+ };
+ 
++inline void GraphNode::SetDeviceId(int id) {
++  if (dev_id_ != id) {
++    dev_id_ = id;
++    if (parentGraph_ != nullptr) {
++      parentGraph_->InvalidateNodeCountPlacementForDevice(id);
++    }
++  }
++}
++
+ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+  public:
+   static std::unordered_set<GraphExec*> graphExecSet_;
+@@ -907,6 +936,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+       }
+     }
+     parallel_streams_.clear();
++    graph_signal_generations_.clear();  // All launch callbacks have released this GraphExec.
+     if (IsSegmentSchedulingEnabled()) {
+       if (kernArgManager_ != nullptr) {
+         kernArgManager_->release();
+@@ -959,13 +989,22 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+ 
+   amd::Command* EnqueueSegmentedGraph(hip::Stream* launch_stream,
+                                       const std::vector<hip::Stream*>& streams,
+-                                      hipError_t* out_status = nullptr);
++                                      hipError_t* out_status = nullptr,
++                                     amd::Marker* completion_marker = nullptr);
+   hipError_t EnqueueSegment(const Segment& segment, hip::Stream* stream,
+-                            amd::AccumulateCommand* accumulate);
++                            amd::AccumulateCommand* accumulate, bool terminal_region = false);
+ 
+   bool TopologicalOrder() { return Graph::TopologicalOrder(topoOrder_); }
+   //! Update streams for the graph execution with launch stream from application
+   void UpdateStreams(hip::Stream* launch_stream);
++  bool CanCoalesce(hip::Stream* launch_stream) const;
++  bool CanUseGraphSignals(hip::Stream* launch_stream,
++                          std::unordered_map<int, hip::Stream*>& assignment);
++  hipError_t RunGraphSignals(hip::Stream* launch_stream,
++                            const std::unordered_map<int, hip::Stream*>& assignment);
++  hipError_t RunGraphFrontier(hip::Stream* launch_stream,
++                             const std::unordered_map<int, hip::Stream*>& assignment);
++  static void ReleaseGraphSignalLaunch(cl_event event, cl_int status, void* data);
+   //! Find the number of streams required per device for multi-device graph execution
+   //! This method analyzes the stream-to-device mappings and recursively processes
+   //! child graphs to determine the maximum concurrent streams needed per device
+@@ -997,6 +1036,7 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+   bool repeatLaunch_ = false;
+   //!< Track last launch stream to avoid redundant UpdateStreams
+   hip::Stream* lastLaunchStream_ = nullptr;
++  bool streams_coalesced_ = false;  // Actual cached logical mapping, not eligibility.
+ 
+   // PacketBatch structure
+   struct PacketBatch {
+@@ -1036,6 +1076,24 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
+   //! Batches of accumulated packets and kernel names for batch dispatch optimization
+   //! Map from segment ID to SegmentBatch for O(1) lookup
+   std::unordered_map<int, SegmentBatch> segmentBatches_;
++
++  struct GraphSignalGeneration {
++    std::unique_ptr<amd::device::VirtualDevice::GraphSignalArena> arena;
++    bool busy = false;
++    bool quarantined = false;
++  };
++  struct GraphSignalLaunch {
++    GraphExec* graph;
++    GraphSignalGeneration* generation;
++    uint64_t serial;
++  };
++  // CPU lowering is serialized, never GPU execution. The callback takes only
++  // pool_mutex_, and releases all references after dropping that lock.
++  std::mutex graph_signal_launch_mutex_;
++  std::mutex graph_signal_pool_mutex_;
++  std::vector<std::unique_ptr<GraphSignalGeneration>> graph_signal_generations_;
++  uint64_t graph_signal_launch_serial_ = 0;
++  GraphSignalGeneration* AcquireGraphSignalGeneration(hip::Stream* stream, size_t count = 0);
+ };
+ 
+ class ChildGraphNode : public GraphNode, public GraphExec {
+@@ -1461,7 +1519,7 @@ class GraphKernelNode : public GraphNode {
+ 
+   hipError_t SetParams(const hipKernelNodeParams* params) {
+     // Update device ID since new params may require validation for the current device.
+-    dev_id_ = ihipGetDevice();
++    SetDeviceId(ihipGetDevice());
+     hipFunction_t func = getFunc(kernelParams_, dev_id_);
+     if (!func) {
+       return hipErrorInvalidDeviceFunction;
+@@ -1489,7 +1547,7 @@ class GraphKernelNode : public GraphNode {
+   hipError_t SetAttrParams(hipKernelNodeAttrID attr, const hipKernelNodeAttrValue* params) {
+     hipDeviceProp_t prop = {0};
+     // Update device ID since new params may require validation for the current device.
+-    dev_id_ = ihipGetDevice();
++    SetDeviceId(ihipGetDevice());
+     hipError_t status = ihipGetDeviceProperties(&prop, dev_id_);
+     if (hipSuccess != status) {
+       return status;
+@@ -1578,7 +1636,7 @@ class GraphKernelNode : public GraphNode {
+   }
+ 
+   hipError_t SetParams(GraphNode* node) override {
+-    dev_id_ = ihipGetDevice();
++    SetDeviceId(ihipGetDevice());
+     const GraphKernelNode* kernelNode = static_cast<GraphKernelNode const*>(node);
+     return SetParams(&kernelNode->kernelParams_);
+   }
+@@ -1803,9 +1861,9 @@ class GraphMemcpyNode1D : public GraphMemcpyNode {
+               srcMemory->getContext().devices().size() == 1 &&
+               dstMemory->getContext().devices().size() == 1)) {
+           if (srcMemory->getContext().devices().size() == 1) {
+-            dev_id_ = srcMemory->GetDeviceById()->index();
++            SetDeviceId(srcMemory->GetDeviceById()->index());
+           } else {
+-            dev_id_ = dstMemory->GetDeviceById()->index();
++            SetDeviceId(dstMemory->GetDeviceById()->index());
+           }
+         }
+         break;
+diff --git a/rocclr/device/blit.hpp b/rocclr/device/blit.hpp
+index c4d0093..b3c8c0f 100644
+--- a/rocclr/device/blit.hpp
++++ b/rocclr/device/blit.hpp
+@@ -226,6 +226,8 @@ class BlitManager : public amd::HeapObject {
+       device::Memory& memory,  //!< Memory contents to compare the 'value' against
+       uint64_t value, size_t offset, size_t sizeBytes, uint64_t flags, uint64_t mask) const = 0;
+ 
++  virtual bool resetGraphSignals(const uint64_t* handles, uint32_t count) const { return false; }
++
+   //! Stream batch memory operation
+   virtual bool batchMemOps(const void* paramArray, size_t paramSize, uint32_t count) const = 0;
+ 
+diff --git a/rocclr/device/blitcl.cpp b/rocclr/device/blitcl.cpp
+index 19a23a1..935f2c6 100644
+--- a/rocclr/device/blitcl.cpp
++++ b/rocclr/device/blitcl.cpp
+@@ -162,6 +162,18 @@ const char* BlitLinearSourceCode = BLIT_KERNELS(
+       __amd_copyBufferRectAligned(src, dst, srcRect, dstRect, size);
+     }
+ 
++    __kernel void __amd_rocclr_graphSignalReset(__global const ulong* handles, uint count) {
++      uint i = __builtin_amdgcn_workgroup_id_x() * 64 + __builtin_amdgcn_workitem_id_x();
++      if (i < count) {
++        // Private ROCr SharedSignal ABI: value at8, start/end timestamps at32/40.
++        // Ownership fields are never overwritten and no host reader is active.
++        __global volatile ulong* signal = (__global volatile ulong*)handles[i];
++        signal[1] = 1;
++        signal[4] = 0;
++        signal[5] = 0;
++      }
++    }
++
+     __kernel void __amd_rocclr_batchMemOp(__global void* params, uint count) {
+       __amd_batchMemOp(params, count);
+     });
+diff --git a/rocclr/device/device.hpp b/rocclr/device/device.hpp
+index 56deff7..87baf19 100644
+--- a/rocclr/device/device.hpp
++++ b/rocclr/device/device.hpp
+@@ -50,6 +50,7 @@
+ #include <vector>
+ #include <map>
+ #include <mutex>
++#include <memory>
+ #include <list>
+ #include <set>
+ #include <unordered_set>
+@@ -1329,6 +1330,43 @@ class VirtualDevice : public amd::ReferenceCountedObject {
+   virtual bool dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                                       const std::vector<std::string>& kernelNames,
+                                       amd::AccumulateCommand* vcmd = nullptr) = 0 ;
++  // Internal graph dependency storage. It must never become a Command::HwEvent.
++  class GraphSignalArena {
++   public:
++    std::vector<uint64_t> handles;
++    virtual ~GraphSignalArena() = default;
++  };
++  virtual std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) {
++    return nullptr;
++  }
++  virtual bool resetGraphSignalArena(GraphSignalArena& arena, amd::AccumulateCommand& command) {
++    return false;
++  }
++  virtual bool graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const {
++    return false;
++  }
++  virtual bool dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>& dependencies, uint64_t completion) {
++    return false;
++  }
++  // Prepared private graph packets have no ordinary host completion. The caller
++  // owns all token/argument lifetimes and holds execution() while publishing.
++  class GraphFrontierBatch {
++   public:
++    virtual ~GraphFrontierBatch() = default;
++  };
++  virtual bool supportsGraphFrontier() const { return false; }
++  virtual bool resetGraphSignalArenaCpu(GraphSignalArena&) { return false; }
++  virtual std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierKernels(
++      const std::vector<uint8_t*>& packets, const std::vector<uint64_t>& dependencies,
++      uint64_t completion, bool system_acquire) { return nullptr; }
++  virtual std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierJoin(
++      const std::vector<uint64_t>& dependencies, uint64_t completion,
++      bool system_release) { return nullptr; }
++  virtual void publishGraphFrontierBatch(const GraphFrontierBatch&) { std::abort(); }
++  virtual void importGraphFrontierPredecessor(void* ordinary_hw_event) { std::abort(); }
++  virtual void materializeGraphFrontier(amd::Marker&, uint64_t) { std::abort(); }
+   //! Returns the number of outstanding HSA async handlers
+   std::atomic<uint64_t>& QueuedAsyncHandlers() const { return queued_async_handlers_; }
+ 
+diff --git a/rocclr/device/rocm/rocblit.cpp b/rocclr/device/rocm/rocblit.cpp
+index a76e78f..6eda4ae 100644
+--- a/rocclr/device/rocm/rocblit.cpp
++++ b/rocclr/device/rocm/rocblit.cpp
+@@ -2579,6 +2579,23 @@ bool KernelBlitManager::streamOpsWait(device::Memory& memory, uint64_t value, si
+ }
+ 
+ // ================================================================================================
++bool KernelBlitManager::resetGraphSignals(const uint64_t* handles, uint32_t count) const {
++  amd::ScopedLock lock(lockXferOps_);
++  if (handles == nullptr || count == 0 || kernels_[GraphSignalReset] == nullptr) return false;
++  size_t offset[1] = {0};
++  size_t global[1] = {(static_cast<size_t>(count) + 63) & ~size_t(63)};
++  size_t local[1] = {64};
++  setArgument(kernels_[GraphSignalReset], 0, sizeof(cl_mem), handles, 0, nullptr, true);
++  setArgument(kernels_[GraphSignalReset], 1, sizeof(count), &count);
++  amd::NDRangeContainer range(1, offset, global, local);
++  address parameters = captureArguments(kernels_[GraphSignalReset]);
++  if (parameters == nullptr) return false;
++  bool result = gpu().submitKernelInternal(range, *kernels_[GraphSignalReset], parameters, nullptr);
++  releaseArguments(parameters);
++  // No synchronous blit fence. The caller appends ordinary GPU retirement.
++  return result;
++}
++
+ bool KernelBlitManager::batchMemOps(const void* paramArray, size_t paramSize,
+                                     uint32_t count) const {
+   amd::ScopedLock k(lockXferOps_);
+diff --git a/rocclr/device/rocm/rocblit.hpp b/rocclr/device/rocm/rocblit.hpp
+index 9b60899..d417025 100644
+--- a/rocclr/device/rocm/rocblit.hpp
++++ b/rocclr/device/rocm/rocblit.hpp
+@@ -284,6 +284,7 @@ class KernelBlitManager : public DmaBlitManager {
+     GwsInit,
+     InitHeap,
+     BatchMemOp,
++    GraphSignalReset,
+     BlitLinearTotal,
+     FillImage = BlitLinearTotal,
+     BlitCopyImage,
+@@ -497,6 +498,8 @@ class KernelBlitManager : public DmaBlitManager {
+       device::Memory& memory,  //!< Memory contents to compare the 'value' against
+       uint64_t value, size_t offset, size_t sizeBytes, uint64_t flags, uint64_t mask) const;
+ 
++  bool resetGraphSignals(const uint64_t* handles, uint32_t count) const override;
++
+   //! Batch memory ops- Submits batch of streamWaits and streamWrite operations.
+   virtual bool batchMemOps(const void* paramArray, size_t paramSize, uint32_t count) const;
+ 
+@@ -585,6 +588,7 @@ static const char* BlitName[KernelBlitManager::BlitTotal] = {
+     "__amd_rocclr_streamOpsWrite",    "__amd_rocclr_streamOpsWait",
+     "__amd_rocclr_scheduler",         "__amd_rocclr_gwsInit",
+     "__amd_rocclr_initHeap",          "__amd_rocclr_batchMemOp",
++    "__amd_rocclr_graphSignalReset",
+     "__amd_rocclr_fillImage",         "__amd_rocclr_copyImage",
+     "__amd_rocclr_copyImage1DA",      "__amd_rocclr_copyImageToBuffer",
+     "__amd_rocclr_copyBufferToImage"};
+diff --git a/rocclr/device/rocm/rocvirtual.cpp b/rocclr/device/rocm/rocvirtual.cpp
+index be10bce..6af567d 100644
+--- a/rocclr/device/rocm/rocvirtual.cpp
++++ b/rocclr/device/rocm/rocvirtual.cpp
+@@ -35,6 +35,7 @@
+ #include "utils/debug.hpp"
+ #include "os/os.hpp"
+ 
++#include <algorithm>
+ #include <fstream>
+ #include <limits>
+ #include <memory>
+@@ -1263,7 +1264,7 @@ void VirtualGPU::dispatchNativeEventWait(hsa_signal_t signal) {
+             static_cast<unsigned long long>(threshold_index),
+             static_cast<unsigned long long>(read_index));
+   }
+-  // The recorded index is the oldest of 256 actual kernels, regardless of gaps.
++  // The recorded index is the oldest of the required actual kernels, regardless of gaps.
+   // Rechecking this exact index cannot count intervening non-kernel packets or
+   // mistake a drained kernel history for currently outstanding work.
+   if (read_index > threshold_index) return;
+@@ -1397,7 +1398,9 @@ bool VirtualGPU::dispatchAqlPacket(hsa_barrier_and_packet_t* packet, uint16_t he
+ template <typename AqlPacket>
+ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
+                                                bool blocking, bool attach_signal,
+-                                               const std::vector<std::string>* kernelNames) {
++                                               const std::vector<std::string>* kernelNames,
++                                               bool tail_completion_only,
++                                               uint64_t graph_completion) {
+   if (packets.empty()) {
+     return false;
+   }
+@@ -1467,13 +1470,20 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+         NoteNativeKernelPacket(index);
+       }
+ 
+-      bool attachSignal = timestamp_ != nullptr || attach_signal;
++      const bool terminal_packet = packetIndex + 1 == numPackets;
++      bool attachSignal = tail_completion_only ? terminal_packet :
++          (timestamp_ != nullptr || attach_signal);
+ 
+-      packet->completion_signal =
+-          Barriers().ActiveSignal(kInitSignalValueOne, timestamp_, attachSignal);
++      if (graph_completion != 0) {
++        packet->completion_signal = hsa_signal_t{terminal_packet ? graph_completion : 0};
++      } else {
++        packet->completion_signal = Barriers().ActiveSignal(
++            kInitSignalValueOne, attachSignal ? timestamp_ : nullptr, attachSignal);
++      }
+ 
+       if (std::is_same<decltype(packet), hsa_kernel_dispatch_packet_t*>::value &&
+-          timestamp_ != nullptr) {
++          graph_completion == 0 && timestamp_ != nullptr &&
++          (!tail_completion_only || terminal_packet)) {
+         // If profiling is enabled, store the correlation ID in the dispatch packet
+         if (amd::activity_prof::IsEnabled(OP_ID_DISPATCH)) {
+           auto dispatchPacket = reinterpret_cast<hsa_kernel_dispatch_packet_t*>(packet);
+@@ -1535,6 +1545,20 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+         fence_state_ = static_cast<Device::CacheState>(expected_fence_state);
+       }
+ 
++      if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && (tail_completion_only || graph_completion != 0)) {
++        const uint16_t actual_header = isFirstPacket ? doorbellHeader : packet->header;
++        fprintf(stderr, "%s command=%p physical=%llu packet=%zu "
++                        "total=%zu signal=%llu barrier=%u acquire=%u release=%u\n",
++                graph_completion != 0 ? "GRAPH_LOCAL_PACKET" : "GRAPH_KERNEL_RETIRE_PACKET",
++                static_cast<void*>(command_), static_cast<unsigned long long>(gpu_queue_->id),
++                packetIndex, numPackets,
++                static_cast<unsigned long long>(packet->completion_signal.handle),
++                extractAqlBits(actual_header, HSA_PACKET_HEADER_BARRIER, HSA_PACKET_HEADER_WIDTH_BARRIER),
++                extractAqlBits(actual_header, HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE,
++                              HSA_PACKET_HEADER_WIDTH_SCACQUIRE_FENCE_SCOPE),
++                extractAqlBits(actual_header, HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE,
++                              HSA_PACKET_HEADER_WIDTH_SCRELEASE_FENCE_SCOPE));
++      }
+       // Copy the packet to the queue
+       *aql_loc = *packet;
+ 
+@@ -1599,7 +1623,23 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+ 
+     processedPackets += batchSize;
+ 
+-    TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
++    if (graph_completion != 0) {
++      // Do not expose a local dependency to IsQueueIdle's CPU signal loads.
++      // The ordinary lane retirement later supplies the host-visible completion.
++      last_write_index_ = startIndex + batchSize - 1;
++    } else {
++      TrackQueueProgress(*packets[processedPackets - 1], startIndex + batchSize - 1);
++    }
++    if (tail_completion_only && GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS != 0 &&
++        processedPackets < numPackets &&
++        processedPackets >= GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS) {
++      // The true final kernel (and its completion signal/handler) is not published.
++      // Exercise ordinary retirement of a physically submitted incomplete batch.
++      hasPendingDispatch_ = true;
++      fprintf(stderr, "GRAPH_KERNEL_RETIRE_INJECTED_FAILURE command=%p published=%zu total=%zu\n",
++              static_cast<void*>(command_), processedPackets, numPackets);
++      return false;
++    }
+     // Double the batch size for next iteration, cap at DEBUG_HIP_GRAPH_BATCH_SIZE
+     if (batchSize < kMaxBatchSize) {
+       batchSize *= 2;
+@@ -1623,17 +1663,361 @@ bool VirtualGPU::dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& pa
+ }
+ 
+ // ================================================================================================
++namespace {
++class RocGraphSignalArena final : public device::VirtualDevice::GraphSignalArena {
++ public:
++  const Device& device;
++  uint64_t* table = nullptr;
++  std::vector<volatile hsa_signal_value_t*> values;
++  explicit RocGraphSignalArena(const Device& dev) : device(dev) {}
++  ~RocGraphSignalArena() override {
++    for (uint64_t handle : handles) {
++      if (Hsa::signal_destroy(hsa_signal_t{handle}) != HSA_STATUS_SUCCESS) std::abort();
++    }
++    if (table != nullptr) device.hostFree(table, handles.size() * sizeof(uint64_t));
++  }
++};
++}
++
++std::unique_ptr<device::VirtualDevice::GraphSignalArena>
++VirtualGPU::createGraphSignalArena(size_t count, bool local) {
++  if (count == 0 || count > UINT32_MAX) return nullptr;
++  auto arena = std::make_unique<RocGraphSignalArena>(dev());
++  arena->handles.reserve(count);
++  hsa_agent_t agent = dev().getBackendDevice();
++  // Private, verified ROCr implementation from the placement experiment.
++  const uint64_t attributes = HSA_AMD_SIGNAL_AMD_GPU_ONLY | (uint64_t(1) << 63) |
++      (local ? (uint64_t(1) << 62) : 0);
++  for (size_t i = 0; i < count; ++i) {
++    hsa_signal_t signal{};
++    if (Hsa::signal_create(1, 1, &agent, attributes, &signal) != HSA_STATUS_SUCCESS) return nullptr;
++    arena->handles.push_back(signal.handle);
++    volatile hsa_signal_value_t* value = nullptr;
++    if (Hsa::signal_value_pointer(signal, &value) != HSA_STATUS_SUCCESS ||
++        value == nullptr || reinterpret_cast<uintptr_t>(value) % alignof(hsa_signal_value_t)) {
++      return nullptr;
++    }
++    arena->values.push_back(value);
++  }
++  arena->table = static_cast<uint64_t*>(dev().hostAlloc(count * sizeof(uint64_t), 64,
++                                                       Device::MemorySegment::kKernArg));
++  if (arena->table == nullptr) return nullptr;
++  std::memcpy(arena->table, arena->handles.data(), count * sizeof(uint64_t));
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_ARENA arena=%p count=%zu local=%u agent=%llu\n",
++            static_cast<void*>(arena.get()), count, local,
++            static_cast<unsigned long long>(agent.handle));
++  }
++  return arena;
++}
++
++namespace {
++// The vector is fully constructed before the first packet of a launch is
++// published. Kernel and barrier packets both use the fixed 64-byte AQL ABI.
++struct RocGraphFrontierBatch final : device::VirtualDevice::GraphFrontierBatch {
++  struct alignas(64) Packet { uint64_t words[8] = {}; };
++  std::vector<Packet> packets;
++  void appendWaits(const std::vector<uint64_t>& dependencies, uint64_t completion,
++                   bool final_join) {
++    const size_t count = std::max(size_t(1), (dependencies.size() + 4) / 5);
++    for (size_t i = 0; i < count; ++i) {
++      hsa_barrier_and_packet_t barrier{};
++      const bool last = i + 1 == count;
++      barrier.header = kNopPacketHeader;
++      // Ordered preceding barriers make this an AND of all dependencies, even
++      // above the AQL five-signal limit. Only the final packet releases to SYSTEM.
++      if (last && final_join) {
++        barrier.header |= HSA_FENCE_SCOPE_AGENT << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE;
++        barrier.header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE;
++      }
++      for (size_t j = 0; j < 5 && i * 5 + j < dependencies.size(); ++j) {
++        barrier.dep_signal[j].handle = dependencies[i * 5 + j];
++      }
++      if (last) barrier.completion_signal.handle = completion;
++      Packet packet;
++      static_assert(sizeof(packet) == sizeof(barrier), "AQL ABI");
++      std::memcpy(&packet, &barrier, sizeof(packet));
++      packets.push_back(packet);
++    }
++  }
++};
++}
++
++bool VirtualGPU::supportsGraphFrontier() const {
++#if defined(__x86_64__) && !IS_WINDOWS
++  const auto& isa = dev().isa();
++  return isa.versionMajor() == 9 && isa.versionMinor() == 5 && isa.versionStepping() == 0;
++#else
++  return false;
++#endif
++}
++
++bool VirtualGPU::resetGraphSignalArenaCpu(GraphSignalArena& storage) {
++#if defined(__x86_64__) && !IS_WINDOWS
++  auto& arena = static_cast<RocGraphSignalArena&>(storage);
++  static_assert(__atomic_always_lock_free(sizeof(hsa_signal_value_t), nullptr),
++                "Private signal reset requires lock-free signal-width stores");
++  // Exclusive, fully retired generation ownership is required. The cached API
++  // pointer avoids Signal::Convert's CPU reads of GPU-resident metadata.
++  for (auto* value : arena.values) __atomic_store_n(value, hsa_signal_value_t{1}, __ATOMIC_RELAXED);
++  asm volatile("sfence" ::: "memory");
++  return true;
++#else
++  return false;
++#endif
++}
++
++std::unique_ptr<device::VirtualDevice::GraphFrontierBatch>
++VirtualGPU::prepareGraphFrontierKernels(const std::vector<uint8_t*>& packets,
++    const std::vector<uint64_t>& dependencies, uint64_t completion, bool system_acquire) {
++  if (completion == 0 || !graphSignalPacketsEligible(packets)) return nullptr;
++  auto result = std::make_unique<RocGraphFrontierBatch>();
++  result->packets.reserve(packets.size() + (dependencies.size() + 4) / 5);
++  if (!dependencies.empty()) result->appendWaits(dependencies, 0, false);
++  for (size_t i = 0; i < packets.size(); ++i) {
++    hsa_kernel_dispatch_packet_t packet;
++    std::memcpy(&packet, packets[i], sizeof(packet));
++    packet.completion_signal.handle = i + 1 == packets.size() ? completion : 0;
++    if (i == 0 && system_acquire) {
++      packet.header &= ~(((1u << HSA_PACKET_HEADER_WIDTH_SCACQUIRE_FENCE_SCOPE) - 1)
++                         << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE);
++      packet.header |= HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE;
++    }
++    RocGraphFrontierBatch::Packet copy;
++    std::memcpy(&copy, &packet, sizeof(copy));
++    result->packets.push_back(copy);
++  }
++  return result;
++}
++
++std::unique_ptr<device::VirtualDevice::GraphFrontierBatch>
++VirtualGPU::prepareGraphFrontierJoin(const std::vector<uint64_t>& dependencies,
++                                    uint64_t completion, bool system_release) {
++  if (completion == 0) return nullptr;
++  auto result = std::make_unique<RocGraphFrontierBatch>();
++  result->appendWaits(dependencies, completion, system_release);
++  return result;
++}
++
++void VirtualGPU::publishGraphFrontierPackets(const void* bytes, size_t count) {
++  assert(gpu_queue_ != nullptr && count != 0);
++  const auto* packets = static_cast<const RocGraphFrontierBatch::Packet*>(bytes);
++  const uint64_t mask = gpu_queue_->size - 1;
++  // Reserve/publish bounded chunks; topological launch ordering guarantees each
++  // dependency producer was already published before a consumer can fill a ring.
++  for (size_t done = 0; done < count;) {
++    const size_t chunk = std::min(count - done, static_cast<size_t>(mask));
++    const uint64_t begin = Hsa::queue_add_write_index_screlease(gpu_queue_, chunk);
++    while (begin + chunk - 1 - Hsa::queue_load_read_index_scacquire(gpu_queue_) >= mask) {}
++    for (size_t i = 0; i < chunk; ++i) {
++      const auto& source = packets[done + i];
++      auto* slot = &static_cast<RocGraphFrontierBatch::Packet*>(gpu_queue_->base_address)
++                       [(begin + i) & mask];
++      // Publish header last. A struct assignment including a live header can
++      // make a partially copied packet visible before its arguments/dependencies.
++      std::memcpy(reinterpret_cast<char*>(slot) + 4,
++                  reinterpret_cast<const char*>(&source) + 4, sizeof(source) - 4);
++      const auto head = static_cast<uint32_t>(source.words[0]);
++      packet_store_release(reinterpret_cast<uint32_t*>(slot), head & 0xffff, head >> 16);
++      last_write_index_ = begin + i;
++    }
++    Hsa::signal_store_screlease(gpu_queue_->doorbell_signal, begin + chunk - 1);
++    done += chunk;
++  }
++  // Do not call TrackQueueProgress: its completion signal may later be CPU-read.
++  // Every public boundary must explicitly materialize an ordinary host signal.
++  hasPendingDispatch_ = true;
++  setFenceDirty(true);
++  fence_state_ = Device::kCacheStateInvalid;
++  BreakNativeKernelHistory();
++}
++
++void VirtualGPU::publishGraphFrontierBatch(const GraphFrontierBatch& storage) {
++  const auto& batch = static_cast<const RocGraphFrontierBatch&>(storage);
++  publishGraphFrontierPackets(batch.packets.data(), batch.packets.size());
++}
++
++void VirtualGPU::importGraphFrontierPredecessor(void* ordinary_hw_event) {
++  assert(command_ == nullptr && timestamp_ == nullptr);
++  if (ordinary_hw_event != nullptr) {
++    Barriers().AddExternalSignal(static_cast<ProfilingSignal*>(ordinary_hw_event));
++  }
++  dispatchBlockingWait();
++}
++
++void VirtualGPU::materializeGraphFrontier(amd::Marker& command, uint64_t completion) {
++  assert(completion != 0 && command_ == nullptr && timestamp_ == nullptr);
++  profilingBegin(command);
++  hsa_barrier_and_packet_t barrier{};
++  barrier.header = kNopPacketHeader;
++  barrier.dep_signal[0].handle = completion;
++  RocGraphFrontierBatch::Packet packet;
++  std::memcpy(&packet, &barrier, sizeof(packet));
++  publishGraphFrontierPackets(&packet, 1);
++  // Private handles remain outside HwQueueTracker, command HwEvents and IRQs.
++  // This ordinary signal also lets SDMA observe completion of every graph lane.
++  releaseGpuMemoryFence(true);
++  profilingEnd();
++}
++
++bool VirtualGPU::resetGraphSignalArena(GraphSignalArena& storage,
++                                       amd::AccumulateCommand& command) {
++  auto& arena = static_cast<RocGraphSignalArena&>(storage);
++  amd::ScopedLock lock(execution());
++  profilingBegin(command);
++  const auto saved_header = aqlHeader_;
++  aqlHeader_ = (HSA_PACKET_TYPE_KERNEL_DISPATCH << HSA_PACKET_HEADER_TYPE) |
++      (1 << HSA_PACKET_HEADER_BARRIER) |
++      (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE) |
++      (HSA_FENCE_SCOPE_SYSTEM << HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE);
++  addSystemScope();
++  bool result = blitMgr().resetGraphSignals(arena.table, static_cast<uint32_t>(arena.handles.size()));
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++    fprintf(stderr, "GRAPH_LOCAL_RESET command=%p arena=%p physical=%llu count=%zu header=%u status=%u\n",
++            static_cast<void*>(&command), static_cast<void*>(&arena),
++            static_cast<unsigned long long>(gpu_queue_->id), arena.handles.size(), aqlHeader_, result);
++  }
++  aqlHeader_ = saved_header;
++  // Even a pre-dispatch failure must consume any ordinary external dependencies.
++  if (!result) dispatchBlockingWait();
++  profilingEnd();
++  return result;
++}
++
++bool VirtualGPU::graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const {
++  return !packets.empty() && std::all_of(packets.begin(), packets.end(), [](const uint8_t* bytes) {
++    const auto* p = reinterpret_cast<const hsa_kernel_dispatch_packet_t*>(bytes);
++    return extractAqlBits(p->header, HSA_PACKET_HEADER_TYPE, HSA_PACKET_HEADER_WIDTH_TYPE) ==
++        HSA_PACKET_TYPE_KERNEL_DISPATCH &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_BARRIER, HSA_PACKET_HEADER_WIDTH_BARRIER) != 0 &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_SCACQUIRE_FENCE_SCOPE,
++                      HSA_PACKET_HEADER_WIDTH_SCACQUIRE_FENCE_SCOPE) >= HSA_FENCE_SCOPE_AGENT &&
++        extractAqlBits(p->header, HSA_PACKET_HEADER_SCRELEASE_FENCE_SCOPE,
++                      HSA_PACKET_HEADER_WIDTH_SCRELEASE_FENCE_SCOPE) >= HSA_FENCE_SCOPE_AGENT;
++  });
++}
++
++bool VirtualGPU::dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++    const std::vector<std::string>& names, amd::AccumulateCommand* command,
++    const std::vector<uint64_t>& dependencies, uint64_t completion) {
++  if (completion == 0 || !graphSignalPacketsEligible(packets)) return false;
++  // Never mutate graph-owned captured templates or leave their completion fields
++  // referring to a generation that a later launch might reuse.
++  std::vector<hsa_kernel_dispatch_packet_t> copies(packets.size());
++  std::vector<uint8_t*> views;
++  views.reserve(packets.size());
++  for (size_t i = 0; i < packets.size(); ++i) {
++    std::memcpy(&copies[i], packets[i], sizeof(copies[i]));
++    views.push_back(reinterpret_cast<uint8_t*>(&copies[i]));
++  }
++  return dispatchAqlPacketBatchImpl(views, names, command, &dependencies, completion);
++}
++
+ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                                         const std::vector<std::string>& kernelNames,
+                                         amd::AccumulateCommand* vcmd) {
++  return dispatchAqlPacketBatchImpl(packets, kernelNames, vcmd, nullptr, 0);
++}
++
++bool VirtualGPU::dispatchAqlPacketBatchImpl(const std::vector<uint8_t*>& packets,
++    const std::vector<std::string>& kernelNames, amd::AccumulateCommand* vcmd,
++    const std::vector<uint64_t>* raw_dependencies, uint64_t graph_completion) {
+   if (vcmd == nullptr || packets.empty() || packets.size() != kernelNames.size()) {
+     return false;
+   }
+ 
+   amd::ScopedLock lock(execution());
++  if (graph_completion == 0 && vcmd->graphKernelRetirementRequested()) {
++    vcmd->clearGraphKernelRetirementRequest();
++    const auto* last = reinterpret_cast<const hsa_kernel_dispatch_packet_t*>(packets.back());
++    const bool ordered_tail = extractAqlBits(last->header, HSA_PACKET_HEADER_TYPE,
++        HSA_PACKET_HEADER_WIDTH_TYPE) == HSA_PACKET_TYPE_KERNEL_DISPATCH &&
++        extractAqlBits(last->header, HSA_PACKET_HEADER_BARRIER,
++                      HSA_PACKET_HEADER_WIDTH_BARRIER) != 0;
++    const bool all_kernels = std::all_of(packets.begin(), packets.end(), [](const uint8_t* bytes) {
++      const auto* packet = reinterpret_cast<const hsa_kernel_dispatch_packet_t*>(bytes);
++      return extractAqlBits(packet->header, HSA_PACKET_HEADER_TYPE,
++                            HSA_PACKET_HEADER_WIDTH_TYPE) == HSA_PACKET_TYPE_KERNEL_DISPATCH;
++    });
++    if (ordered_tail && all_kernels && !DEBUG_HIP_FORCE_ASYNC_QUEUE) {
++      // The graph caller immediately invokes enqueue() on this region. That
++      // registers ordinary batch/IRQ completion before publishing its last kernel.
++      vcmd->deferGraphKernelRetirement(&packets, &kernelNames);
++      return true;
++    }
++  }
+   profilingBegin(*vcmd);
+ 
+-  dispatchBlockingWait();
++  const auto& graph_dependencies = vcmd->graphDependencies();
++  const size_t dependency_begin = vcmd->graphDependencyBegin();
++  // Notification/materialization happened outside this consumer lock. Check all
++  // inputs before adding any tracker state, so the error path has no partial import.
++  for (size_t i = dependency_begin; i < graph_dependencies.size(); ++i) {
++    auto* event = graph_dependencies[i];
++    void* hw_event = event->NotifyEvent() != nullptr
++        ? event->NotifyEvent()->HwEvent() : event->HwEvent();
++    if (hw_event == nullptr && event->status() != CL_COMPLETE) {
++      profilingEnd();
++      return false;
++    }
++  }
++  auto entry_event = vcmd->pendingGraphEntryEvent();
++  if (entry_event != nullptr) {
++    // profilingBegin clears previous external signals; import this one-shot
++    // dependency afterward. Its command remains owned by vcmd until retirement.
++    void* hw_event = entry_event->NotifyEvent() != nullptr
++        ? entry_event->NotifyEvent()->HwEvent() : entry_event->HwEvent();
++    if (hw_event == nullptr) {
++      if (graph_completion == 0 || entry_event->status() != CL_COMPLETE) {
++        profilingEnd();
++        return false;  // Materialization was required before graph submission.
++      }
++    } else {
++      Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
++    }
++    auto producer = entry_event->command().queue();
++    if (producer != nullptr && producer != vcmd->queue() &&
++        producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
++      setFenceDirty(true);
++    }
++  }
++  for (size_t i = dependency_begin; i < graph_dependencies.size(); ++i) {
++    auto* event = graph_dependencies[i];
++    void* hw_event = event->NotifyEvent() != nullptr
++        ? event->NotifyEvent()->HwEvent() : event->HwEvent();
++    if (hw_event != nullptr) {
++      Barriers().AddExternalSignal(reinterpret_cast<ProfilingSignal*>(hw_event));
++    }
++    auto* producer = event->command().queue();
++    if (producer != nullptr && producer != vcmd->queue() &&
++        producer->vdev() != nullptr && producer->vdev()->isFenceDirty()) {
++      setFenceDirty(true);
++    }
++  }
++  dispatchBlockingWait();  // Keep ordinary min24 admission and AQL dependencies.
++  vcmd->consumeGraphDependencies();
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && dependency_begin < graph_dependencies.size()) {
++    fprintf(stderr, "GRAPH_BATCH_DEPENDENCIES command=%p physical=%llu events=%zu\n",
++            static_cast<void*>(vcmd),
++            static_cast<unsigned long long>(gpu_queue_->id),
++            graph_dependencies.size() - dependency_begin);
++  }
++  if (entry_event != nullptr) {
++    addSystemScope();  // SYSTEM acquire on the first actual kernel packet.
++    vcmd->consumeGraphEntryEvent();  // Ownership is deliberately not consumed.
++  }
++
++  if (raw_dependencies != nullptr && !raw_dependencies->empty()) {
++    BreakNativeKernelHistory();
++    // Only this generation's private handles enter this path. No tracker import,
++    // CPU load, native-wait admission, profiling signal, or host handler.
++    for (size_t i = 0; i < raw_dependencies->size(); ++i) {
++      barrier_packet_.dep_signal[i % 5] = hsa_signal_t{(*raw_dependencies)[i]};
++      if (i % 5 == 4 || i + 1 == raw_dependencies->size()) {
++        dispatchBarrierPacket(kNopPacketHeader, true);
++      }
++    }
++  }
+ 
+   // Add all kernel names in bulk
+   vcmd->setKernelNamesRef(&kernelNames);
+@@ -1642,10 +2026,22 @@ bool VirtualGPU::dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+   // Cast packets vector to AQL packets vector on the fly
+   const auto& aqlPackets =
+       reinterpret_cast<const std::vector<hsa_kernel_dispatch_packet_t*>&>(packets);
+-  bool result = dispatchGenericAqlPacketBatch(aqlPackets, false, false, &kernelNames);
++  const bool kernel_retirement = vcmd->graphKernelRetirementSubmitting();
++  bool result = dispatchGenericAqlPacketBatch(aqlPackets, false, false, &kernelNames,
++                                             kernel_retirement, graph_completion);
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && graph_completion != 0) {
++    fprintf(stderr, "GRAPH_LOCAL_BATCH command=%p physical=%llu packets=%zu waits=%zu tail=%llu status=%u\n",
++            static_cast<void*>(vcmd), static_cast<unsigned long long>(gpu_queue_->id),
++            packets.size(), raw_dependencies == nullptr ? 0 : raw_dependencies->size(),
++            static_cast<unsigned long long>(graph_completion), result);
++  }
++  if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE && kernel_retirement && result) {
++    fprintf(stderr, "GRAPH_KERNEL_RETIRE command=%p physical=%llu packets=%zu signal=%llu\n",
++            static_cast<void*>(vcmd), static_cast<unsigned long long>(gpu_queue_->id),
++            packets.size(), static_cast<unsigned long long>(aqlPackets.back()->completion_signal.handle));
++  }
+ 
+   profilingEnd();
+-
+   return result;
+ }
+ 
+@@ -4286,6 +4682,21 @@ void VirtualGPU::submitMarker(amd::Marker& vcmd) {
+ 
+ // ================================================================================================
+ void VirtualGPU::submitAccumulate(amd::AccumulateCommand& vcmd) {
++  if (vcmd.graphRetirementPackets() != nullptr) {
++    const auto* packets = vcmd.graphRetirementPackets();
++    const auto* names = vcmd.graphRetirementNames();
++    vcmd.takeGraphKernelRetirement();
++    const bool success = dispatchAqlPacketBatch(*packets, *names, &vcmd);
++    vcmd.finishGraphKernelRetirement(success);
++    if (success) return;
++    // Materialization failures publish nothing; the diagnostic prefix failure
++    // publishes only packets before the tail, with no completion handler yet.
++    // Retire that prefix and complete the ordinary submission batch. GraphExec
++    // reports the error after synchronous enqueue.
++    if (GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE) {
++      fprintf(stderr, "GRAPH_KERNEL_RETIRE_FALLBACK command=%p\n", static_cast<void*>(&vcmd));
++    }
++  }
+   // Make sure VirtualGPU has an exclusive access to the resources
+   amd::ScopedLock lock(execution());
+   profilingBegin(vcmd);
+diff --git a/rocclr/device/rocm/rocvirtual.hpp b/rocclr/device/rocm/rocvirtual.hpp
+index 561f10d..c32975d 100644
+--- a/rocclr/device/rocm/rocvirtual.hpp
++++ b/rocclr/device/rocm/rocvirtual.hpp
+@@ -512,13 +512,37 @@ class VirtualGPU : public device::VirtualDevice {
+   bool dispatchAqlPacketBatch(const std::vector<uint8_t*>& packets,
+                               const std::vector<std::string>& kernelNames,
+                               amd::AccumulateCommand* vcmd = nullptr);
++  std::unique_ptr<GraphSignalArena> createGraphSignalArena(size_t count, bool local) override;
++  bool resetGraphSignalArena(GraphSignalArena& arena, amd::AccumulateCommand& command) override;
++  bool graphSignalPacketsEligible(const std::vector<uint8_t*>& packets) const override;
++  bool supportsGraphFrontier() const override;
++  bool resetGraphSignalArenaCpu(GraphSignalArena&) override;
++  std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierKernels(
++      const std::vector<uint8_t*>& packets, const std::vector<uint64_t>& dependencies,
++      uint64_t completion, bool system_acquire) override;
++  std::unique_ptr<GraphFrontierBatch> prepareGraphFrontierJoin(
++      const std::vector<uint64_t>& dependencies, uint64_t completion,
++      bool system_release) override;
++  void publishGraphFrontierBatch(const GraphFrontierBatch&) override;
++  void importGraphFrontierPredecessor(void* ordinary_hw_event) override;
++  void materializeGraphFrontier(amd::Marker& command, uint64_t completion) override;
++  void publishGraphFrontierPackets(const void* packets, size_t count);
++
++  bool dispatchGraphSignalPacketBatch(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>& dependencies, uint64_t completion) override;
++  bool dispatchAqlPacketBatchImpl(const std::vector<uint8_t*>& packets,
++      const std::vector<std::string>& names, amd::AccumulateCommand* command,
++      const std::vector<uint64_t>* dependencies, uint64_t completion);
+   template <typename AqlPacket> bool dispatchGenericAqlPacket(AqlPacket* packet, uint16_t header,
+                                                               uint16_t rest, bool blocking,
+                                                               bool attach_signal = false);
+   //! Dispatches multiple AQL packets with a single doorbell ring
+   template <typename AqlPacket> bool dispatchGenericAqlPacketBatch(const std::vector<AqlPacket*>& packets,
+                                                                    bool blocking, bool attach_signal = false,
+-                                                                   const std::vector<std::string>* kernelNames = nullptr);
++                                                                   const std::vector<std::string>* kernelNames = nullptr,
++                                                                   bool tail_completion_only = false,
++                                                                   uint64_t graph_completion = 0);
+ 
+   bool dispatchCounterAqlPacket(hsa_ext_amd_aql_pm4_packet_t* packet, const uint32_t gfxVersion,
+                                 bool blocking, const hsa_ven_amd_aqlprofile_1_00_pfn_t* extApi);
+@@ -640,22 +664,22 @@ class VirtualGPU : public device::VirtualDevice {
+   ManagedBuffer managed_kernarg_buffer_;  //!< Managed memory for kernel args
+   ManagedBuffer native_wait_buffer_;     //!< Executable native wait instructions
+   bool native_wait_enabled_ = false;
+-  // Require 256 actual unread kernel packets before adding a native prewait.
+-  // Short dependencies and drained histories use ordinary AQL.
+-  static constexpr uint64_t kNativeWaitMinDispatches = 256;
+-  // Keep positions, not packet-span length: markers and other streams' packets
+-  // never count as kernels. A fresh read index at/before the oldest retained
+-  // position proves that all 256 of this stream's kernels remain unread.
+-  uint64_t native_kernel_positions_[kNativeWaitMinDispatches]{};
++  // Admission is a cost heuristic; keep the history storage independent of it.
++  static constexpr uint64_t kNativeWaitMinDispatches = 24;
++  static constexpr uint64_t kNativeWaitHistoryCapacity = 256;
++  // Record actual kernel positions, not packet spans that include other work.
++  uint64_t native_kernel_positions_[kNativeWaitHistoryCapacity]{};
+   uint64_t native_history_queue_id_ = std::numeric_limits<uint64_t>::max();
+   unsigned native_history_head_ = 0;
+   unsigned native_history_count_ = 0;
+   uint64_t NativeThresholdIndex() const {
+     if (gpu_queue_ == nullptr || native_history_queue_id_ != gpu_queue_->id ||
+-        native_history_count_ != kNativeWaitMinDispatches) {
++        native_history_count_ < kNativeWaitMinDispatches) {
+       return std::numeric_limits<uint64_t>::max();
+     }
+-    return native_kernel_positions_[native_history_head_];
++    return native_kernel_positions_[
++        (native_history_head_ + kNativeWaitHistoryCapacity - kNativeWaitMinDispatches) %
++        kNativeWaitHistoryCapacity];
+   }
+   void BreakNativeKernelHistory() {
+     native_history_head_ = native_history_count_ = 0;
+@@ -667,8 +691,8 @@ class VirtualGPU : public device::VirtualDevice {
+       native_history_head_ = native_history_count_ = 0;
+     }
+     native_kernel_positions_[native_history_head_] = index;
+-    native_history_head_ = (native_history_head_ + 1) % kNativeWaitMinDispatches;
+-    if (native_history_count_ < kNativeWaitMinDispatches) ++native_history_count_;
++    native_history_head_ = (native_history_head_ + 1) % kNativeWaitHistoryCapacity;
++    if (native_history_count_ < kNativeWaitHistoryCapacity) ++native_history_count_;
+   }
+   uint64_t native_wait_count_ = 0;
+   uint64_t native_irq_wait_count_ = 0;
+diff --git a/rocclr/platform/command.cpp b/rocclr/platform/command.cpp
+index feefaf8..af0fe12 100644
+--- a/rocclr/platform/command.cpp
++++ b/rocclr/platform/command.cpp
+@@ -387,11 +387,20 @@ void Command::enqueue() {
+     // The batch update must be lock protected to avoid a race condition
+     // when multiple threads submit/flush/update the batch at the same time
+     ScopedLock sl(queue_->vdev()->execution());
++    if (!defersGraphRetirement() && !consumesGraphFrontier()) {
++      auto* predecessor = queue_->getLastQueuedCommand(false);
++      if (predecessor != nullptr && predecessor->graphFrontier() != 0) {
++        auto* bridge = predecessor->takeGraphFrontierBridge();
++        assert(bridge != nullptr);
++        bridge->enqueue();  // Recursive execution lock; no graph/notification lock.
++        bridge->release();
++      }
++    }
+     queue_->FormSubmissionBatch(this);
+ 
+     // Enqueue flushes, except profiling markers to avoid frequent expensive callbacks
+     if (((type() == 0) && profilingInfo().batch_flush_) || (type() == CL_COMMAND_MARKER) ||
+-        (type() == CL_COMMAND_TASK)) {
++        ((type() == CL_COMMAND_TASK) && !defersGraphRetirement())) {
+       // The current HSA signal tracking logic requires profiling enabled for the markers
+       EnableProfiling();
+       // Update batch head for the current marker. Hence the status of all commands can be
+diff --git a/rocclr/platform/command.hpp b/rocclr/platform/command.hpp
+index c7d8d8f..221a6c3 100644
+--- a/rocclr/platform/command.hpp
++++ b/rocclr/platform/command.hpp
+@@ -385,6 +385,14 @@ class Command : public Event {
+    */
+   virtual void submit(device::VirtualDevice& device) = 0;
+ 
++  // A private graph completion is never an HwEvent. It only chains GPU graph
++  // launches; ordinary submission consumes a preallocated public bridge first.
++  virtual uint64_t graphFrontier() const { return 0; }
++  virtual bool defersGraphRetirement() const { return false; }
++  virtual bool consumesGraphFrontier() const { return false; }
++  virtual Command* takeGraphFrontierBridge() { return nullptr; }
++
++
+   //! Release the resources associated with this event.
+   virtual void releaseResources();
+ 
+@@ -1394,6 +1402,20 @@ class AccumulateCommand : public Command {
+   //! Kernel names and timestamps list for activity profiling
+   std::vector<std::string> kernelNames_;
+   const std::vector<std::string>* kernelNamesRef_ = nullptr;
++  // Separate from eventWaitList: import only once, retain through GPU retirement.
++  Event* graph_entry_event_ = nullptr;
++  bool graph_entry_pending_ = false;
++  // Graph-internal waits are imported once at the next captured batch. Keep
++  // their command references through the consumer region's GPU retirement.
++  EventWaitList graph_dependencies_;
++  size_t graph_dependency_begin_ = 0;
++  // Borrowed only across the immediate synchronous seal/enqueue call. GraphExec
++  // owns the captured packet/name vectors until after all submissions complete.
++  const std::vector<uint8_t*>* graph_retirement_packets_ = nullptr;
++  const std::vector<std::string>* graph_retirement_names_ = nullptr;
++  bool graph_kernel_retirement_requested_ = false;
++  bool graph_kernel_retirement_submitting_ = false;
++  bool graph_kernel_retirement_failed_ = false;
+   std::vector<std::pair<uint64_t, uint64_t>> tsList_;
+ 
+  public:
+@@ -1402,6 +1424,63 @@ class AccumulateCommand : public Command {
+                     const Event* waitingEvent = nullptr)
+       : Command(queue, CL_COMMAND_TASK, eventWaitList, 0, waitingEvent) {}
+ 
++  void setGraphEntryEvent(Event* event) {
++    assert(graph_entry_event_ == nullptr && event != nullptr);
++    event->retain();
++    graph_entry_event_ = event;
++    graph_entry_pending_ = true;
++  }
++  Event* pendingGraphEntryEvent() const {
++    return graph_entry_pending_ ? graph_entry_event_ : nullptr;
++  }
++  void consumeGraphEntryEvent() { graph_entry_pending_ = false; }
++  void appendGraphDependencies(const EventWaitList& events) {
++    assert(graph_dependency_begin_ == graph_dependencies_.size());
++    for (auto* event : events) {
++      event->retain();
++      graph_dependencies_.push_back(event);
++    }
++  }
++  const EventWaitList& graphDependencies() const { return graph_dependencies_; }
++  size_t graphDependencyBegin() const { return graph_dependency_begin_; }
++  void consumeGraphDependencies() { graph_dependency_begin_ = graph_dependencies_.size(); }
++  void requestGraphKernelRetirement() {
++    assert(graph_retirement_packets_ == nullptr);
++    graph_kernel_retirement_requested_ = true;
++  }
++  bool graphKernelRetirementRequested() const { return graph_kernel_retirement_requested_; }
++  void clearGraphKernelRetirementRequest() { graph_kernel_retirement_requested_ = false; }
++  void deferGraphKernelRetirement(const std::vector<uint8_t*>* packets,
++                                  const std::vector<std::string>* names) {
++    assert(graph_retirement_packets_ == nullptr && packets != nullptr && names != nullptr);
++    graph_retirement_packets_ = packets;
++    graph_retirement_names_ = names;
++  }
++  const std::vector<uint8_t*>* graphRetirementPackets() const { return graph_retirement_packets_; }
++  const std::vector<std::string>* graphRetirementNames() const { return graph_retirement_names_; }
++  void takeGraphKernelRetirement() {
++    graph_retirement_packets_ = nullptr;
++    graph_retirement_names_ = nullptr;
++    graph_kernel_retirement_requested_ = false;
++    graph_kernel_retirement_submitting_ = true;
++  }
++  bool graphKernelRetirementSubmitting() const { return graph_kernel_retirement_submitting_; }
++  void finishGraphKernelRetirement(bool success) {
++    graph_kernel_retirement_submitting_ = false;
++    graph_kernel_retirement_failed_ = !success;
++  }
++  bool graphKernelRetirementFailed() const { return graph_kernel_retirement_failed_; }
++  void releaseResources() override {
++    if (graph_entry_event_ != nullptr) {
++      graph_entry_event_->release();
++      graph_entry_event_ = nullptr;
++    }
++    for (auto* event : graph_dependencies_) event->release();
++    graph_dependencies_.clear();
++    graph_dependency_begin_ = 0;
++    Command::releaseResources();
++  }
++
+   //! Add kernel name to the list if available
+   void addKernelName(const std::string& kernelName) { kernelNames_.push_back(kernelName); }
+ 
+@@ -1427,6 +1506,97 @@ class AccumulateCommand : public Command {
+   virtual void submit(device::VirtualDevice& device) { device.submitAccumulate(*this); }
+ };
+ 
++// Each launch preallocates its bridge, but the bridge takes a reference to the
++// launch only when transferred into the submission batch. There is no cycle.
++class GraphFrontierMarker final : public Marker {
++  std::atomic<Command*> owner_{nullptr};
++  uint64_t frontier_ = 0;
++  static void completed(cl_event, cl_int status, void* data) {
++    auto* self = static_cast<GraphFrontierMarker*>(data);
++    if (status == CL_COMPLETE) {
++      if (auto* owner = self->owner_.exchange(nullptr)) owner->release();
++    }
++  }
++ public:
++  explicit GraphFrontierMarker(HostQueue& queue) : Marker(queue, false) {}
++  bool initialize() { return event().setCallback(CL_COMPLETE, completed, this, false); }
++  void arm(Command& owner) {
++    assert(owner_ == nullptr && owner.graphFrontier() != 0);
++    owner.retain();
++    owner_.store(&owner);
++    frontier_ = owner.graphFrontier();
++  }
++  bool consumesGraphFrontier() const override { return true; }
++  void submit(device::VirtualDevice& device) override {
++    device.materializeGraphFrontier(*this, frontier_);
++  }
++  void releaseResources() override {
++    // A failed completion is not proof that the private waiter drained. Keep
++    // its producer alive in that case, even if ordinary batch cleanup runs.
++    if (status() == CL_COMPLETE) {
++      if (auto* owner = owner_.exchange(nullptr)) owner->release();
++    }
++    Marker::releaseResources();
++  }
++};
++
++class GraphFrontierCommand final : public AccumulateCommand {
++  GraphFrontierMarker* bridge_;
++  std::atomic<Event*> predecessor_{nullptr};
++  std::function<void(bool)> release_owner_;
++  uint64_t frontier_;
++  bool published_ = false;
++  bool resources_released_ = false;
++  static void completed(cl_event, cl_int status, void* data) {
++    auto* self = static_cast<GraphFrontierCommand*>(data);
++    // Once this launch retires, its reads of the prior token have retired too.
++    // Dropping this edge here bounds chains across ordinary batch watermarks.
++    // The launch's OWN generation remains leased until its final reference.
++    if (status == CL_COMPLETE) {
++      if (auto* predecessor = self->predecessor_.exchange(nullptr)) predecessor->release();
++    }
++  }
++ public:
++  GraphFrontierCommand(HostQueue& queue, uint64_t frontier,
++                       std::function<void(bool)> release_owner)
++      : AccumulateCommand(queue), bridge_(new GraphFrontierMarker(queue)),
++        release_owner_(std::move(release_owner)), frontier_(frontier) {}
++  bool initialize() {
++    return bridge_->initialize() && event().setCallback(CL_COMPLETE, completed, this, false);
++  }
++  void setPredecessor(Event* predecessor) {
++    assert(predecessor_ == nullptr);
++    if (predecessor != nullptr) predecessor->retain();
++    predecessor_.store(predecessor);
++  }
++  void markPublished() { published_ = true; }
++  uint64_t graphFrontier() const override { return frontier_; }
++  bool defersGraphRetirement() const override { return true; }
++  Command* takeGraphFrontierBridge() override {
++    assert(bridge_ != nullptr);
++    auto* bridge = bridge_;
++    bridge_ = nullptr;
++    bridge->arm(*this);
++    return bridge;
++  }
++  void submit(device::VirtualDevice&) override {}  // Packets already published atomically.
++  void releaseResources() override {
++    if (resources_released_) return;
++    resources_released_ = true;
++    const bool safe = !published_ || status() == CL_COMPLETE;
++    if (safe) {
++      if (auto* predecessor = predecessor_.exchange(nullptr)) predecessor->release();
++    }
++    if (bridge_ != nullptr) {
++      bridge_->release();
++      bridge_ = nullptr;
++    }
++    AccumulateCommand::releaseResources();
++    // This may destroy GraphExec, so do not consult graph/generation afterward.
++    release_owner_(safe);
++  }
++};
++
+ /*! \brief  Maps CL objects created from external ones and syncs the contents (blocking).
+  *
+  */
+@@ -1956,6 +2126,8 @@ union ComputeCommand {
+   ExternalSemaphoreCmd cmd9;
+   Marker cmd10;
+   AccumulateCommand cmd11;
++  GraphFrontierCommand graphFrontierCommand;
++  GraphFrontierMarker graphFrontierMarker;
+   AcquireExtObjectsCommand cmd13;
+   ReleaseExtObjectsCommand cmd14;
+   PerfCounterCommand cmd15;
+diff --git a/rocclr/platform/commandqueue.cpp b/rocclr/platform/commandqueue.cpp
+index f197a3f..a7623fd 100644
+--- a/rocclr/platform/commandqueue.cpp
++++ b/rocclr/platform/commandqueue.cpp
+@@ -143,6 +143,12 @@ bool HostQueue::terminate() {
+ 
+ void HostQueue::FlushSubmissionBatch() {
+   if (size_ > DEBUG_CLR_MAX_BATCH_SIZE) {
++    if (lastEnqueueCommand_ != nullptr && lastEnqueueCommand_->graphFrontier() != 0) {
++      auto* bridge = lastEnqueueCommand_->takeGraphFrontierBridge();
++      bridge->enqueue();
++      bridge->release();
++      return;
++    }
+     auto marker = new Marker(*this, false);
+     if (marker != nullptr) {
+       marker->enqueue();
+diff --git a/rocclr/utils/flags.hpp b/rocclr/utils/flags.hpp
+index ad44e48..3cd9b82 100644
+--- a/rocclr/utils/flags.hpp
++++ b/rocclr/utils/flags.hpp
+@@ -151,6 +151,38 @@ release(bool, GPU_NATIVE_EVENT_TRACE, false,                                 \
+         "Trace native event counts at queue destruction")                     \
+ release(bool, GPU_NATIVE_EVENT_WAIT, false,                                  \
+         "Experimental gfx950 native event pre-wait")                          \
++release(bool, GPU_GRAPH_NODE_COUNT_PLACEMENT, false,                         \
++        "Place longer graph segments first without changing enqueue order")  \
++release(bool, GPU_GRAPH_DIAGNOSTIC_SPARE, true,                               \
++        "Diagnostic control for the existing optional graph spare stream")   \
++release(bool, GPU_GRAPH_DIAGNOSTIC_QUALIFIED_SPARE, false,                    \
++        "Restrict optional spare to qualified kernel or placement graphs")   \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LOGICAL_COALESCE, false,                  \
++        "Diagnostic: place eligible flat kernel graph on its launch stream") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_SHARED_RETIRE, false,                    \
++        "Diagnostic: one accumulator for a coalesced flat kernel graph")      \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LANE_RETIRE, false,                      \
++        "Diagnostic: share captured-kernel retirement within logical lanes") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_COVERED_TAIL, false,                                          \
++        "Diagnostic: omit success-only final side waits already covered by explicit graph ancestry") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_DEPS, false,                         \
++        "Diagnostic: import graph dependencies in the next captured batch")  \
++release(uint, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE_FAIL_AFTER_PACKETS, 0,       \
++        "Diagnostic: fail a final-kernel batch after a published prefix.")    \
++release(bool, GPU_GRAPH_DIAGNOSTIC_FRONTIER, false,                         \
++        "Diagnostic: private GPU graph completion with deferred host retirement") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNALS, false,                    \
++        "Diagnostic: graph-owned GPU-local dependency signals")             \
++release(bool, GPU_GRAPH_DIAGNOSTIC_LOCAL_SIGNAL_HOST, false,                \
++        "Diagnostic: matched host backing for graph-owned signals")          \
++release(bool, GPU_GRAPH_DIAGNOSTIC_KERNEL_RETIRE, false,                     \
++        "Diagnostic: retire an ordered captured region on its final kernel.") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_FUSE_FINAL, false,                        \
++        "Diagnostic: join graph side tails in the final completion marker")  \
++release(uint, GPU_GRAPH_DIAGNOSTIC_LANE_FAIL_AFTER, 0,                      \
++        "Diagnostic: fail after this many published lane-retirement segments") \
++release(bool, GPU_GRAPH_DIAGNOSTIC_QUEUE_TRACE, false,                        \
++        "Untimed graph stream selection and actual queue assignment receipts") \
+ release(uint, GPU_MAX_HW_QUEUES, 4,                                           \
+          "The maximum number of HW queues allocated per device")              \
+ release(bool, GPU_IMAGE_BUFFER_WAR, true,                                     \
