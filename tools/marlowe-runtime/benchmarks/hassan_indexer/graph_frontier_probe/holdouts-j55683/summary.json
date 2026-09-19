@@ -1,0 +1,8 @@
+{
+  "audit_passed": true,
+  "processes": 48,
+  "proof_processes": 6,
+  "qualified_for_production": false,
+  "spec_sha256": "0af55e6fe9d836bf42350db5e67644309d1165183c64da77f35d46d3fd72093b",
+  "timing_rows": 9728
+}
