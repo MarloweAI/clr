@@ -1,0 +1,23 @@
+# Custom CU-mask shutdown holdout — separate from GPU polling
+
+Job54540 (node2, one GPU) passed64 fixture processes, then the entry-mask case completed all GPU work and output checks but failed to exit the HIP library. The root inspected the process, collected stacks and matched controls, and deliberately canceled the allocation after12m53. No timing experiments ran; the failed qualification is preserved. The preceding54519 failure was a different harness-only ready-receipt assertion;54594 likewise completed78 fixtures before a harness-only entry-count assertion. Neither supplied performance numbers.
+
+In the blocked mask case, two `GRAPH_PREWAIT_SELECT` records show pending=1, capability=cu_mask, enabled=1, native=0, attempted=0 and submitted=0. There was no polling helper or GPU trace-record allocation. All4 original kernels completed with correct per-replay outputs, and `PREWAIT_FIXTURE_END ... correct=1` was printed. The process reached `calling fini: ...libamdhip64.so` and stayed in KFD event waits.
+
+The root captured the blocked threads with ROCgdb. The release libraries are stripped; relinking their exact O3 object files with a linker map produced identical `.text` SHA256 `5c6d6cd8145c6f8fd7c9b5f17f4dac427ee2977a18a0d42e6c6397df3ede6525`. That map identifies:
+
+- Main thread: `amd::Runtime::tearDown` → `amd::Device::tearDown` → `amd::roc::Device::~Device` → HSA wait. The source destructor destroys pooled hardware queues.
+- Async event thread: `HsaAmdSignalHandler` → `ReferenceCountedObject::release` → `VirtualGPU::~VirtualGPU` → `Device::releaseQueue` → HSA wait. For a nonempty per-stream CU mask, this release path directly calls `hsa_queue_destroy`.
+
+The same masked fixture also blocked with exact prior K runtime HIP0e7d285. On the new HIPa44038ab, disabling KERNEL_RETIRE still blocked once in three inspected attempts; the other two exited. Thus a retirement-only or polling-only eligibility change is not a supported remedy. A new-runtime off attempt exited, confirming the hang is timing-dependent. Single-replay stock and all-graph-diagnostics-off controls exited, but this changes replay count and is not a clean attribution. The two-replay stock control failed the changed-input output check before normal stream cleanup; it must not be called a successful shutdown baseline. An initial diagnostic step with no GPU GRES failed hipSetDevice before execution and is excluded.
+
+An independent source reviewer verified the matching upstream fixes in a fresh filtered clone of official ROCm/rocm-systems:
+
+- [4e2396f8 — defer queue release to prevent CU-mask deadlock](https://github.com/ROCm/rocm-systems/commit/4e2396f8a845203beb62f864dd917065a9013447), June25,2026: detects async-handler context and defers custom non-cooperative queue destruction to an application thread. Its stated failure mechanism matches the observed handler stack.
+- [9a25d0be — wait for handlers before teardown](https://github.com/ROCm/rocm-systems/commit/9a25d0be4f410c357c1b1b4d889d1abc88ae97f8), March26,2026: handler accounting and device-teardown drain prerequisite.
+
+These fixes are present in the clean local newer rocm-systems tree, but absent from this experiment's older ROCm7.2.4 CLR base. This is a separate runtime lifetime limitation; it does not establish a GPU-polling or firmware fault. Porting only a guard or only the teardown wait would not address the unsafe queue-destroy call site. No such patch has been mixed into these performance experiments.
+
+The unmasked performance protocol explicitly keeps qualification.complete=false and lists both omitted per-stream-mask cases. V4 adds ordinary pooled streams with a real `ROC_GLOBAL_CU_MASK=0xffffffff`, verifies the HIP32CU property, and requires a pending masked dependency to reject polling while retaining its original barrier. This tests the mask capability rejection without pretending to cover custom-queue teardown. Full production qualification still requires the independent lifetime fix and revalidation.
+
+Artifacts: `v2/results-j54540`, `v2/teardown-diagnostic-gpu-j54540`, `v2/teardown-retire-off-j54540`, `v2/teardown-all-graph-off-j54540`, `v2/mask-54540-backtrace-clean.txt`, `v2/mask-54540-backtrace-symbols.txt`, and `v2/link.map`. Remote files are under the matching `/workspace/home/sasha/amd-runtime-production/iterations/hassan-graph-prewait-20260919` root. Exact benchmark/library hashes remain unchanged. The section-dump tool replaced the library inode with identical bytes while preparing symbols; SHA256 equality was checked against the still-mapped old inode, which was preserved in debug-symbols/original-runtime.so. No performance process was running during this operation.
